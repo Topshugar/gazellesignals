@@ -1,1 +1,100 @@
-
+<!DOCTYPE html>
+<html>
+<head>
+<title>Gazelle Signals - Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:monospace}
+body{background:#0a0e14;color:#c5c8c6;user-select:none}
+.header{background:#151a23;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e252f}
+.logo{color:#00ff88;font-weight:bold;font-size:18px}
+.tier{padding:4px 10px;border-radius:4px;font-size:12px}
+.FREE{background:#ff444433;color:#ff4444;border:1px solid #ff4444}
+.VIP{background:#00ff8833;color:#00ff88;border:1px solid #00ff88}
+.container{padding:20px;max-width:1200px;margin:auto}
+.card{background:#151a23;border:1px solid #1e252f;border-radius:8px;padding:15px;margin-bottom:15px}
+.signal{display:flex;justify-content:space-between;align-items:center;padding:12px;background:#0a0e14;border-radius:6px;margin-bottom:8px;border-left:3px solid transparent}
+.signal.BUY{border-left-color:#00ff88}
+.signal.SELL{border-left-color:#ff4444}
+.buy{color:#00ff88}
+.sell{color:#ff4444}
+.blurred{filter:blur(6px);pointer-events:none;position:relative}
+.lock{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#000a;padding:5px 10px;border-radius:4px;color:#ff4444;filter:none;z-index:10}
+.watermark{position:fixed;bottom:10px;right:10px;color:#ffffff08;font-size:40px;pointer-events:none;transform:rotate(-30deg);z-index:9999}
+input,button{padding:10px;border-radius:4px;border:1px solid #1e252f;background:#0a0e14;color:#fff;width:100%;margin:5px 0}
+button{background:#00ff88;color:#000;font-weight:bold;cursor:pointer;border:none}
+button.slp{background:#ff4444;color:#fff}
+a{color:#00ff88;text-decoration:none}
+</style>
+<script>
+document.addEventListener('contextmenu', e=>e.preventDefault());
+document.addEventListener('selectstart', e=>e.preventDefault());
+document.addEventListener('visibilitychange', ()=>{
+ if(document.hidden){
+   document.body.innerHTML='<div style="background:#0a0e14;color:#ff4444;display:flex;justify-content:center;align-items:center;height:100vh;font-family:monospace"><h1>⚠️ SCREEN CAPTURE BLOCKED</h1></div>';
+   alert('Screenshot blocked - Gazelle Signals protected');
+ }
+});
+</script>
+</head>
+<body>
+<div class="watermark">{{ user.email if user else '' }}</div>
+<div class="header">
+<div class="logo">GAZELLE SIGNALS</div>
+<div>
+<span class="tier {{ user.tier }}">{{ user.tier }}</span>
+<a href="/logout" style="margin-left:15px">Logout</a>
+</div>
+</div>
+<div class="container">
+<div class="card">
+<h3>Live Signals - MT5 Style</h3>
+<div id="signals">
+{% for s in signals %}
+<div class="signal {{ s.type }} {% if user.tier=='FREE' and s.category!='forex' %}blurred{% endif %}">
+<div>
+<b>{{ s.pair }}</b> <span class="{{ s.type|lower }}">{{ s.type }}</span> - {{ s.category.upper() }}
+<br><small>Entry: {{ s.entry }} | SL: {{ s.sl }} | TP: {{ s.tp }} | {{ s.created_at.strftime('%H:%M') }}</small>
+</div>
+{% if user.tier=='FREE' and s.category!='forex' %}<div class="lock">🔒 VIP ONLY</div>{% endif %}
+</div>
+{% endfor %}
+</div>
+</div>
+<div class="card">
+<h3>Telegram ID</h3>
+<form method="POST" action="/telegram">
+<input name="telegram_id" placeholder="Your Telegram ID" value="{{ user.telegram_id or '' }}">
+<button type="submit">Save Telegram</button>
+</form>
+<small style="color:#888">FREE gets forex only | VIP gets ALL forex,gold,crypto,indices</small>
+</div>
+{% if user.tier=='FREE' %}
+<div class="card">
+<h3>Upgrade to VIP - $10</h3>
+<p>Pay with Flutterwave then submit reference</p>
+<button onclick="payWithFlutterwave()">Pay $10 with Flutterwave</button>
+<form method="POST" action="/verify_payment" style="margin-top:10px">
+<input name="reference" placeholder="Enter payment reference after paying">
+<button type="submit">Verify Payment</button>
+</form>
+</div>
+{% endif %}
+</div>
+<script src="https://checkout.flutterwave.com/v3.js"></script>
+<script>
+function payWithFlutterwave(){
+ FlutterwaveCheckout({
+   public_key: "{{ pubk }}",
+   tx_ref: "gazelle_"+Date.now(),
+   amount: 10,
+   currency: "USD",
+   payment_options: "card, banktransfer, ussd",
+   customer:{email:"{{ user.email }}"},
+   customizations:{title:"Gazelle Signals VIP",description:"VIP Access $10"},
+   callback:function(data){document.querySelector('input[name=reference]').value=data.transaction_id;alert('Copy reference and click Verify');}
+ });
+}
+</script>
+</body>
+  </html>
