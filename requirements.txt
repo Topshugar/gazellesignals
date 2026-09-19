@@ -4,3 +4,4 @@ python-dotenv
 Werkzeug
 yfinance
 APScheduler
+gunicorn
