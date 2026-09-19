@@ -13,10 +13,8 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-# Flutterwave Public Key
-FLW_PUBK = "FLWPUBK-680c2f65a0795c23ac1ad8f6aabe4e4c-X"
-
-class User(db.Model):
+# Flutterwave Public Key from env
+FLW_PUBK = os.getenv("FLW_PUBLIC_KEY")class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
