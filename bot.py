@@ -1,153 +1,121 @@
 import yfinance as yf
-import pandas_ta as ta
-import time
-import random
+import pandas as pd
+import numpy as np
 from datetime import datetime
-from app import app, db, Signal
 
-# --- YOUR GAZELLE STRATEGY CONFIG ---
-# Swing = direction bias, Day = entry
-
-SWING_CONFIG = {
-    "rsi": 14,
-    "bb": 20,
-    "ema_fast": 50,
-    "ema_slow": 200,
-    "macd_fast": 12, "macd_slow": 26, "macd_signal": 9,
-    "stoch_k": 14, "stoch_d": 3,
-    "alligator_jaw": 13, "alligator_teeth": 8, "alligator_lips": 5
-}
-
-DAY_CONFIG = {
-    "rsi": 7,
-    "bb": 20,
-    "ema_fast": 9,
-    "ema_slow": 21,
-    "macd_fast": 8, "macd_slow": 21, "macd_signal": 5,
-    "stoch_k": 5, "stoch_d": 3,
-    "alligator_jaw": 13, "alligator_teeth": 8, "alligator_lips": 5
-}
-
-PAIRS_MAP = {
+PAIRS = {
     'EURUSD': 'EURUSD=X',
-    'GBPUSD': 'GBPUSD=X',
+    'GBPUSD': 'GBPUSD=X', 
+    'USDJPY': 'JPY=X',
     'XAUUSD': 'GC=F',
-    'BTCUSD': 'BTC-USD',
-    'ETHUSD': 'ETH-USD'
+    'BTCUSD': 'BTC-USD'
 }
 
-def get_analysis(ticker, config, interval):
+def get_data(symbol, period='1mo', interval='1h'): # swing = 1h
     try:
-        df = yf.download(ticker, period="5d", interval=interval, progress=False)
-        if len(df) < 50: return None
-
-        # EMA Crossover
-        df['ema_fast'] = ta.ema(df['Close'], length=config['ema_fast'])
-        df['ema_slow'] = ta.ema(df['Close'], length=config['ema_slow'])
-
-        # RSI
-        df['rsi'] = ta.rsi(df['Close'], length=config['rsi'])
-
-        # Bollinger Bands for SL/TP/BE
-        bb = ta.bbands(df['Close'], length=config['bb'], std=2)
-        df = df.join(bb)
-
-        # MACD
-        macd = ta.macd(df['Close'], fast=config['macd_fast'], slow=config['macd_slow'], signal=config['macd_signal'])
-        df = df.join(macd)
-
-        # Stochastic
-        stoch = ta.stoch(df['High'], df['Low'], df['Close'], k=config['stoch_k'], d=config['stoch_d'])
-        df = df.join(stoch)
-
-        # Alligator
-        df['jaw'] = ta.sma(df['Close'], length=config['alligator_jaw'])
-        df['teeth'] = ta.sma(df['Close'], length=config['alligator_teeth'])
-        df['lips'] = ta.sma(df['Close'], length=config['alligator_lips'])
-
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-
-        # Scoring system
-        score = 0
-        if last['ema_fast'] > last['ema_slow']: score += 1
-        else: score -= 1
-
-        if last['rsi'] > 50: score += 1
-        else: score -= 1
-
-        if last['lips'] > last['teeth'] > last['jaw']: score += 1
-        elif last['lips'] < last['teeth'] < last['jaw']: score -= 1
-
-        # MACD
-        macd_col = [c for c in df.columns if 'MACD_' in c and '_h' not in c and '_s' not in c][0]
-        macds_col = [c for c in df.columns if 'MACDs_' in c][0]
-        if last[macd_col] > last[macds_col]: score += 1
-        else: score -= 1
-
-        # Stochastic
-        stoch_k = [c for c in df.columns if 'STOCHk_' in c][0]
-        stoch_d = [c for c in df.columns if 'STOCHd_' in c][0]
-        if last[stoch_k] > last[stoch_d] and last[stoch_k] < 80: score += 0.5
-        if last[stoch_k] < last[stoch_d] and last[stoch_k] > 20: score -= 0.5
-
-        direction = "BUY" if score >= 2 else "SELL" if score <= -2 else "NEUTRAL"
-
-        return {
-            "direction": direction,
-            "score": score,
-            "entry": float(last['Close']),
-            "sl": float(last[bb.columns[0]]), # Lower BB for SL if BUY
-            "tp": float(last[bb.columns[2]]), # Upper BB for TP if BUY
-            "df": df
-        }
-    except Exception as e:
-        print(f"Error {ticker}: {e}")
+        df = yf.download(symbol, period=period, interval=interval, progress=False)
+        if df.empty: return None
+        return df
+    except:
         return None
 
-def generate_gazelle_signal():
-    with app.app_context():
-        for pair_name, ticker in PAIRS_MAP.items():
-            print(f"Analyzing {pair_name}...")
+def calc_indicators(df):
+    close = df['Close']
+    
+    # EMA 50 & 200 crossover
+    df['EMA50'] = close.ewm(span=50).mean()
+    df['EMA200'] = close.ewm(span=200).mean()
+    
+    # RSI 14
+    delta = close.diff()
+    gain = delta.where(delta>0,0).rolling(14).mean()
+    loss = -delta.where(delta<0,0).rolling(14).mean()
+    rs = gain/loss
+    df['RSI'] = 100 - (100/(1+rs))
+    
+    # Bollinger 20,2
+    df['BB_MA'] = close.rolling(20).mean()
+    df['BB_STD'] = close.rolling(20).std()
+    df['BB_UP'] = df['BB_MA'] + 2*df['BB_STD']
+    df['BB_LOW'] = df['BB_MA'] - 2*df['BB_STD']
+    
+    # MACD 12,26,9
+    ema12 = close.ewm(span=12).mean()
+    ema26 = close.ewm(span=26).mean()
+    df['MACD'] = ema12 - ema26
+    df['MACD_SIG'] = df['MACD'].ewm(span=9).mean()
+    
+    # Stochastic 14,3,3
+    low14 = df['Low'].rolling(14).min()
+    high14 = df['High'].rolling(14).max()
+    df['%K'] = (close - low14)/(high14-low14)*100
+    df['%D'] = df['%K'].rolling(3).mean()
+    
+    # Alligator - Jaw 13, Teeth 8, Lips 5
+    df['JAW'] = close.ewm(span=13).mean().shift(8)
+    df['TEETH'] = close.ewm(span=8).mean().shift(5)
+    df['LIPS'] = close.ewm(span=5).mean().shift(3)
+    
+    return df
 
-            # 1. SWING DIRECTION (4h)
-            swing = get_analysis(ticker, SWING_CONFIG, "4h")
-            if not swing or swing['direction'] == "NEUTRAL": continue
+def get_direction_score(df):
+    if df is None or len(df) < 200: return 0, None
+    last = df.iloc[-1]
+    
+    score = 0
+    # EMA
+    if last['EMA50'] > last['EMA200']: score += 1
+    else: score -= 1
+    # RSI
+    if last['RSI'] > 55: score += 1
+    elif last['RSI'] < 45: score -= 1
+    # MACD
+    if last['MACD'] > last['MACD_SIG']: score += 1
+    else: score -= 1
+    # Stochastic
+    if last['%K'] > last['%D'] and last['%K'] < 80: score += 1
+    elif last['%K'] < last['%D'] and last['%K'] > 20: score -= 1
+    # Alligator
+    if last['LIPS'] > last['TEETH'] > last['JAW']: score += 1
+    elif last['LIPS'] < last['TEETH'] < last['JAW']: score -= 1
+    
+    return score, last
 
-            # 2. DAY TRADING ENTRY (15m) - must align with swing
-            day = get_analysis(ticker, DAY_CONFIG, "15m")
-            if not day or day['direction']!= swing['direction']: continue
-
-            # 3. CONFIRMED SIGNAL
-            entry = day['entry']
-            category = 'forex' if 'USD' in pair_name and 'XAU' not in pair_name and 'BTC' not in pair_name else 'gold' if 'XAU' in pair_name else 'crypto'
-
-            # SL/TP from Bollinger logic
-            if day['direction'] == 'BUY':
-                sl = min(swing['sl'], day['sl'])
-                tp = max(swing['tp'], day['tp'])
-            else:
-                sl = max(swing['sl'], day['sl'])
-                tp = min(swing['tp'], day['tp'])
-
-            # Avoid duplicate
-            exists = Signal.query.filter_by(pair=pair_name, entry=entry).first()
-            if exists: continue
-
-            sig = Signal(
-                pair=pair_name,
-                type=day['direction'],
-                entry=round(entry, 5),
-                sl=round(sl, 5),
-                tp=round(tp, 5),
-                category=category
-            )
-            db.session.add(sig)
-            db.session.commit()
-            print(f"✅ SIGNAL: {pair_name} {day['direction']} @ {entry}")
-
-if __name__ == '__main__':
-    while True:
-        generate_gazelle_signal()
-        print("Sleeping 15 mins...")
-        time.sleep(900)
+def generate_signal():
+    signals = []
+    for pair, yf_symbol in PAIRS.items():
+        # SWING - 1h chart determines direction
+        df_swing = get_data(yf_symbol, period='2mo', interval='1h')
+        if df_swing is None: continue
+        df_swing = calc_indicators(df_swing)
+        score, last = get_direction_score(df_swing)
+        
+        if abs(score) < 2: # no strong direction
+            continue
+            
+        direction = 'BUY' if score > 0 else 'SELL'
+        
+        # TP/SL/BE from Bollinger
+        entry = float(last['Close'])
+        if direction == 'BUY':
+            sl = float(last['BB_LOW'])
+            tp = float(last['BB_UP'])
+        else:
+            sl = float(last['BB_UP'])
+            tp = float(last['BB_LOW'])
+        
+        # BE = BB middle
+        be = float(last['BB_MA'])
+        
+        signals.append({
+            'pair': pair,
+            'type': direction,
+            'entry': round(entry, 5),
+            'tp': round(tp, 5),
+            'sl': round(sl, 5),
+            'be': round(be, 5),
+            'score': score,
+            'is_vip': False if abs(score) < 3 else True, # strong confluence = VIP
+            'timeframe': 'Swing→Day→Scalp'
+        })
+    return signals
