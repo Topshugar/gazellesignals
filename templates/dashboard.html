@@ -1,79 +1,69 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GazelleSignals</title>
+<title>Dashboard - Gazelle Signals</title>
 <style>
-body{background:#0a0e14;color:white;font-family:sans-serif;margin:0;padding:10px}
-.card{background:#151a23;border-radius:12px;padding:15px;margin:10px 0;border:1px solid #222}
-.buy{color:#00ff88;font-weight:bold}
-.sell{color:#ff4444;font-weight:bold}
-.btn{background:#4a9eff;color:white;border:none;padding:12px 20px;border-radius:10px;width:100%;font-size:16px}
-.lock{filter:blur(5px);opacity:0.5}
-.badge{padding:4px 10px;border-radius:20px;font-size:12px}
-.free{background:#333} .vip{background:gold;color:black}
+*{box-sizing:border-box}
+body{background:#0e0e0e;color:#fff;font-family:Inter,system-ui,Arial;margin:0}
+.header{background:#171717;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #2a2a2a;position:sticky;top:0}
+.badge{padding:5px 12px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:0.5px}
+.free{background:#2a2a2a;color:#999;border:1px solid #333}.vip{background:#FFD700;color:#000}
+.wrap{max-width:520px;margin:0 auto;padding:16px}
+.card{background:#1c1c1e;border:1px solid #2c2c2e;border-radius:18px;padding:16px;margin:12px 0}
+.buy{background:rgba(0,255,136,.12);color:#00ff88;border:1px solid #00ff88;padding:4px 14px;border-radius:20px;font-weight:800;font-size:11px}
+.sell{background:rgba(255,59,59,.12);color:#ff5a5a;border:1px solid #ff5a5a;padding:4px 14px;border-radius:20px;font-weight:800;font-size:11px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.box{background:#252527;border:1px solid #2f2f32;border-radius:12px;padding:10px;text-align:center}
+.box .l{color:#8a8a8e;font-size:10px;letter-spacing:0.5px}.box .v{font-weight:800;font-size:14px;margin-top:2px}
+.btn{width:100%;background:#fff;color:#000;border:0;padding:14px;border-radius:12px;font-weight:800;font-size:14px}
+.btn-gold{background:#FFD700}
+.blur{filter:blur(8px);pointer-events:none;user-select:none}
+.upgrade{background:linear-gradient(135deg,#FFD700 0%,#FF8C00 100%);color:#000;border-radius:18px;padding:20px;text-align:center;margin:16px 0}
+.small{color:#777;font-size:11px}
 </style>
 </head>
 <body>
-<div style="display:flex;justify-content:space-between;align-items:center">
-<h2>🦌 GazelleSignals</h2>
-<span class="badge {{ 'vip' if user.tier=='VIP' else 'free' }}">{{ user.tier }}</span>
+<div class="header">
+  <div><b>GAZELLE</b> <span style="color:#888;font-weight:400">SIGNALS</span></div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span class="badge {{ 'vip' if user.tier=='VIP' else 'free' }}">{{ user.tier }}</span>
+    <a href="/logout" style="color:#666;text-decoration:none;font-size:12px">Logout</a>
+  </div>
 </div>
-<p>Welcome {{ user.email }} | <a href="/logout" style="color:#aaa">Logout</a></p>
 
+<div class="wrap">
 {% if upgrade_mode %}
-<div class="card" style="text-align:center">
-<h3>Upgrade to VIP - $10</h3>
-<p>Unlock Gold, Crypto + All Signals</p>
-<button class="btn" onclick="pay()">Pay with Flutterwave</button>
-</div>
-{% endif %}
+  <div class="upgrade">
+    <h2 style="margin:0">Upgrade to VIP 👑</h2>
+    <p style="margin:8px 0">Unlock XAUUSD + BTCUSD + 85%+ accuracy</p>
+    <h1 style="margin:10px 0">$29 / month</h1>
+    <button class="btn" onclick="pay()">Pay with Flutterwave</button>
+    <p class="small" style="color:#000;margin-top:10px">Instant activation</p>
+  </div>
+  <script src="https://checkout.flutterwave.com/v3.js"></script>
+  <script>
+  function pay(){
+    FlutterwaveCheckout({
+      public_key: "{{ flw_pubk }}",
+      tx_ref: "gazelle-{{ user.id }}-"+Date.now(),
+      amount: 29, currency: "USD",
+      customer:{email:"{{ user.email }}"},
+      callback: function(){ fetch('/verify-payment',{method:'POST'}).then(()=>location='/dashboard') }
+    })
+  }
+  </script>
 
-<h3>Live Signals</h3>
-{% for sig in signals %}
-<div class="card">
-<div style="display:flex;justify-content:space-between">
-<b>{{ sig.pair }}</b>
-<span class="{{ 'buy' if sig.type=='BUY' else 'sell' }}">{{ sig.type }}</span>
-</div>
-<p>Entry: {{ sig.entry }} | SL: {{ sig.sl }} | TP: {{ sig.tp }}</p>
-<small style="color:#888">{{ sig.category }} • {{ sig.created_at.strftime('%H:%M') }}</small>
-</div>
 {% else %}
-<div class="card" style="text-align:center;padding:30px">
-<p>🔍 No signals yet</p>
-<small>Bot is scanning market... check back in 5 mins</small>
-</div>
-{% endfor %}
+  <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 2px">
+    <h3 style="margin:0">Live Signals <span style="color:#00ff88;font-size:11px">● LIVE</span></h3>
+    <span class="small">Auto-updates every 5m</span>
+  </div>
+  <p class="small" style="margin:0 0 12px">Strategy: RSI + BB + EMA + Alligator + MACD + Stochastic</p>
 
-{% if user.tier == 'FREE' %}
-{% for sig in all_signals %}
-{% if sig.category != 'forex' %}
-<div class="card lock">
-<b>{{ sig.pair }} 🔒 VIP ONLY</b>
-<p>Upgrade to unlock this signal</p>
-</div>
-{% endif %}
-{% endfor %}
-<div class="card" style="text-align:center">
-<a href="/upgrade"><button class="btn">Unlock All Signals - $10</button></a>
-</div>
-{% endif %}
-
-<script src="https://checkout.flutterwave.com/v3.js"></script>
-<script>
-function pay(){
-  FlutterwaveCheckout({
-    public_key: "{{ flw_pubk }}",
-    tx_ref: "gazelle_"+Date.now(),
-    amount: 10,
-    currency: "USD",
-    customer:{email:"{{ user.email }}"},
-    callback: function(d){
-      fetch('/verify-payment',{method:'POST'}).then(()=>location.href='/dashboard')
-    }
-  });
-}
-</script>
-</body>
-  </html>
+  {% for s in signals %}
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div><b style="font-size:16px">{{ s.pair }}</b> <span class="small" style="margin-left:6px">{{ s.created_at.strftime('%H:%M') if s.created_at else '' }}</span></div>
+      <span class="{{ 'buy' if s.type=='BUY'
