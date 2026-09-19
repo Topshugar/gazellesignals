@@ -1,41 +1,50 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gazelle Signals - Login</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GazelleSignals - Friendly Trading</title>
+<style>
+body{background:#0a0e14;color:white;font-family:sans-serif;margin:0;padding:20px;text-align:center}
+.card{background:#151a23;border-radius:16px;padding:25px;margin:20px 0;border:1px solid #222}
+.btn{background:#4a9eff;color:white;border:none;padding:14px;border-radius:12px;width:100%;font-size:17px;margin:10px 0}
+input{width:90%;padding:12px;border-radius:10px;border:1px solid #333;background:#0a0e14;color:white;margin:8px}
+h1{font-size:28px}
+</style>
 </head>
-<body class="bg-black min-h-screen flex items-center justify-center p-4">
-  <div class="w-full max-w-sm bg-[#111] rounded-2xl p-6 border border-zinc-800">
+<body>
+<h1>🦌 GazelleSignals</h1>
+<p style="color:#aaa">Simple, friendly trade signals</p>
 
-    <div class="bg-[#00FF88] text-black text-center text-sm font-bold py-2.5 rounded-lg mb-6">
-      🚀 Telegram Bot Coming Soon - VIP $10 via Flutterwave
-    </div>
+<div class="card">
+{% if mode == 'register' %}
+<h3>Create Free Account</h3>
+<form method="POST" action="/register">
+<input name="email" placeholder="Your email" required>
+<input name="password" type="password" placeholder="Password" required>
+<button class="btn">Start Free</button>
+</form>
+<p><a href="/login" style="color:#4a9eff">Already have account? Login</a></p>
+{% elif mode == 'login' %}
+<h3>Welcome Back</h3>
+<form method="POST" action="/login">
+<input name="email" placeholder="Email" required>
+<input name="password" type="password" placeholder="Password" required>
+<button class="btn">Login</button>
+</form>
+<p><a href="/register" style="color:#4a9eff">New? Create account</a></p>
+{% else %}
+<h3>Trade with confidence</h3>
+<p style="color:#ccc">Forex free forever. VIP unlocks Gold & Crypto for just $10.</p>
+<a href="/register"><button class="btn">Get Free Signals</button></a>
+<a href="/login"><button class="btn" style="background:#222">Login</button></a>
+<div style="margin-top:20px;text-align:left;color:#888;font-size:14px">
+<p>✅ Mobile friendly</p>
+<p>✅ One-tap copy</p>
+<p>✅ No telegram needed</p>
+</div>
+{% endif %}
+</div>
 
-    <h1 class="text-center text-[#00FF88] text-xl font-bold tracking-widest mb-6">GAZELLE SIGNALS</h1>
-
-    <div class="flex mb-6">
-      <a href="/login" class="flex-1 text-center pb-2 border-b-2 border-[#00FF88] text-[#00FF88] text-sm">Login</a>
-      <a href="/register" class="flex-1 text-center pb-2 border-b border-zinc-700 text-zinc-400 text-sm">Register</a>
-    </div>
-
-    <form method="POST" action="/login" class="space-y-4">
-      <input type="email" name="email" placeholder="Email" required
-        class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-[#00FF88]">
-
-      <input type="password" name="password" placeholder="Password" required
-        class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-[#00FF88]">
-
-      <button type="submit"
-        class="w-full bg-[#00FF88] text-black font-bold py-3 rounded-lg text-sm hover:bg-[#00e67a]">
-        Login
-      </button>
-    </form>
-
-    <p class="text-center text-zinc-500 text-[11px] mt-6 tracking-widest">
-      MT5 Pro Signals | H4/D1 + M5/M15/M30
-    </p>
-  </div>
+<p style="color:#555;font-size:12px">Built for you, simple & fast</p>
 </body>
-</html> 
+  </html>
