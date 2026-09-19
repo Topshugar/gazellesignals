@@ -16,6 +16,15 @@ db = SQLAlchemy(app)
 # Flutterwave Public Key from env
 FLW_PUBK = os.getenv("FLW_PUBLIC_KEY")
 
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True)
+    password_hash = db.Column(db.String(200))
+    tier = db.Column(db.String(10), default='free')
+    telegram_id = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Signal(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
