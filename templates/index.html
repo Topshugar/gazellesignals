@@ -1,50 +1,16 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GazelleSignals - Friendly Trading</title>
-<style>
-body{background:#0a0e14;color:white;font-family:sans-serif;margin:0;padding:20px;text-align:center}
-.card{background:#151a23;border-radius:16px;padding:25px;margin:20px 0;border:1px solid #222}
-.btn{background:#4a9eff;color:white;border:none;padding:14px;border-radius:12px;width:100%;font-size:17px;margin:10px 0}
-input{width:90%;padding:12px;border-radius:10px;border:1px solid #333;background:#0a0e14;color:white;margin:8px}
-h1{font-size:28px}
-</style>
-</head>
-<body>
-<h1>🦌 GazelleSignals</h1>
-<p style="color:#aaa">Simple, friendly trade signals</p>
-
-<div class="card">
-{% if mode == 'register' %}
-<h3>Create Free Account</h3>
-<form method="POST" action="/register">
-<input name="email" placeholder="Your email" required>
-<input name="password" type="password" placeholder="Password" required>
-<button class="btn">Start Free</button>
-</form>
-<p><a href="/login" style="color:#4a9eff">Already have account? Login</a></p>
-{% elif mode == 'login' %}
-<h3>Welcome Back</h3>
-<form method="POST" action="/login">
-<input name="email" placeholder="Email" required>
-<input name="password" type="password" placeholder="Password" required>
-<button class="btn">Login</button>
-</form>
-<p><a href="/register" style="color:#4a9eff">New? Create account</a></p>
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{background:#000;color:#fff;font-family:Arial;text-align:center;padding:40px 20px}.btn{display:block;background:#fff;color:#000;padding:15px;border-radius:10px;text-decoration:none;font-weight:700;margin:15px auto;max-width:300px}.btn-gold{background:gold}</style>
+</head><body>
+<h1>GAZELLE SIGNALS</h1>
+<p style="color:#888">Professional Swing→Day→Scalp Strategy<br>RSI + BB + EMA + Alligator + MACD + Stoch</p>
+<div style="max-width:400px;margin:40px auto">
+{% if mode=='register' %}
+<form method="POST" action="/register"><input name="email" placeholder="Email" style="width:100%;padding:12px;border-radius:8px;margin:5px 0"><input name="password" type="password" placeholder="Password" style="width:100%;padding:12px;border-radius:8px;margin:5px 0"><button class="btn btn-gold" style="width:100%;border:none">Create Account</button></form>
+{% elif mode=='login' %}
+<form method="POST" action="/login"><input name="email" placeholder="Email" style="width:100%;padding:12px;border-radius:8px;margin:5px 0"><input name="password" type="password" placeholder="Password" style="width:100%;padding:12px;border-radius:8px;margin:5px 0"><button class="btn" style="width:100%;border:none">Login</button></form>
 {% else %}
-<h3>Trade with confidence</h3>
-<p style="color:#ccc">Forex free forever. VIP unlocks Gold & Crypto for just $10.</p>
-<a href="/register"><button class="btn">Get Free Signals</button></a>
-<a href="/login"><button class="btn" style="background:#222">Login</button></a>
-<div style="margin-top:20px;text-align:left;color:#888;font-size:14px">
-<p>✅ Mobile friendly</p>
-<p>✅ One-tap copy</p>
-<p>✅ No telegram needed</p>
-</div>
+<a href="/register" class="btn btn-gold">Start Free - Get 3 Signals</a>
+<a href="/login" class="btn">Login</a>
+<p style="color:#666;font-size:12px;margin-top:30px">✓ 3 FREE Forex signals • VIP $29/mo unlocks Gold & Crypto</p>
 {% endif %}
-</div>
-
-<p style="color:#555;font-size:12px">Built for you, simple & fast</p>
-</body>
-  </html>
+</div></body></html>
