@@ -1,60 +1,41 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gazelle Signals - Login</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-*{margin:0;padding:0;box-sizing:border-box;font-family:monospace}
-body{background:#0a0e14;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh}
-.card{background:#151a23;padding:30px;border-radius:10px;width:90%;max-width:400px;border:1px solid #1e252f}
-h2{color:#00ff88;text-align:center;margin-bottom:20px}
-input{width:100%;padding:12px;margin:8px 0;background:#0a0e14;border:1px solid #1e252f;color:#fff;border-radius:6px}
-button{width:100%;padding:12px;background:#00ff88;color:#000;border:none;border-radius:6px;font-weight:bold;cursor:pointer;margin-top:10px}
-.tabs{display:flex;margin-bottom:20px}
-.tab{flex:1;padding:10px;text-align:center;cursor:pointer;border-bottom:2px solid transparent}
-.tab.active{border-bottom-color:#00ff88;color:#00ff88}
-.form{display:none}
-.form.active{display:block}
-small{color:#888;display:block;text-align:center;margin-top:15px}
-.coming{width:100%;padding:12px;background:gray;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;margin-top:15px}
-</style>
+<script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-<div class="card">
-<div style="background:#00ff88; color:#000; padding:10px; text-align:center; margin-bottom:15px; font-weight:bold; border-radius:5px;">
-🚀 Telegram Bot Coming Soon - VIP $10 via Flutterwave
-</div>
-<h2>GAZELLE SIGNALS</h2>
-<div class="tabs">
-<div class="tab active" onclick="show('login')">Login</div>
-<div class="tab" onclick="show('register')">Register</div>
-</div>
-<div id="login" class="form active">
-<form method="POST" action="/login">
-<input name="email" placeholder="Email" required>
-<input name="password" type="password" placeholder="Password" required>
-<button type="submit">Login</button>
-</form>
-</div>
-<div id="register" class="form">
-<form method="POST" action="/register">
-<input name="email" placeholder="Email" required>
-<input name="password" type="password" placeholder="Password" required>
-<button type="submit">Create Account</button>
-</form>
-</div>
+<body class="bg-black min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-sm bg-[#111] rounded-2xl p-6 border border-zinc-800">
 
-<button type="button" class="coming" onclick="alert('Telegram bot coming soon! VIP $10/month via Flutterwave - stay tuned!')">Join Telegram - Coming Soon</button>
+    <div class="bg-[#00FF88] text-black text-center text-sm font-bold py-2.5 rounded-lg mb-6">
+      🚀 Telegram Bot Coming Soon - VIP $10 via Flutterwave
+    </div>
 
-<small>MT5 Pro Signals | H4/D1 + M5/M15/M30</small>
-</div>
-<script>
-function show(id){
- document.querySelectorAll('.form').forEach(f=>f.classList.remove('active'));
- document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
- document.getElementById(id).classList.add('active');
- event.target.classList.add('active');
-}
-</script>
+    <h1 class="text-center text-[#00FF88] text-xl font-bold tracking-widest mb-6">GAZELLE SIGNALS</h1>
+
+    <div class="flex mb-6">
+      <a href="/login" class="flex-1 text-center pb-2 border-b-2 border-[#00FF88] text-[#00FF88] text-sm">Login</a>
+      <a href="/register" class="flex-1 text-center pb-2 border-b border-zinc-700 text-zinc-400 text-sm">Register</a>
+    </div>
+
+    <form method="POST" action="/login" class="space-y-4">
+      <input type="email" name="email" placeholder="Email" required
+        class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-[#00FF88]">
+
+      <input type="password" name="password" placeholder="Password" required
+        class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-[#00FF88]">
+
+      <button type="submit"
+        class="w-full bg-[#00FF88] text-black font-bold py-3 rounded-lg text-sm hover:bg-[#00e67a]">
+        Login
+      </button>
+    </form>
+
+    <p class="text-center text-zinc-500 text-[11px] mt-6 tracking-widest">
+      MT5 Pro Signals | H4/D1 + M5/M15/M30
+    </p>
+  </div>
 </body>
- </html>
+</html> 
