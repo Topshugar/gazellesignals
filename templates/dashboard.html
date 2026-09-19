@@ -30,3 +30,50 @@ body{background:#0a0e14;color:white;font-family:sans-serif;margin:0;padding:10px
 {% endif %}
 
 <h3>Live Signals</h3>
+{% for sig in signals %}
+<div class="card">
+<div style="display:flex;justify-content:space-between">
+<b>{{ sig.pair }}</b>
+<span class="{{ 'buy' if sig.type=='BUY' else 'sell' }}">{{ sig.type }}</span>
+</div>
+<p>Entry: {{ sig.entry }} | SL: {{ sig.sl }} | TP: {{ sig.tp }}</p>
+<small style="color:#888">{{ sig.category }} • {{ sig.created_at.strftime('%H:%M') }}</small>
+</div>
+{% else %}
+<div class="card" style="text-align:center;padding:30px">
+<p>🔍 No signals yet</p>
+<small>Bot is scanning market... check back in 5 mins</small>
+</div>
+{% endfor %}
+
+{% if user.tier == 'FREE' %}
+{% for sig in all_signals %}
+{% if sig.category != 'forex' %}
+<div class="card lock">
+<b>{{ sig.pair }} 🔒 VIP ONLY</b>
+<p>Upgrade to unlock this signal</p>
+</div>
+{% endif %}
+{% endfor %}
+<div class="card" style="text-align:center">
+<a href="/upgrade"><button class="btn">Unlock All Signals - $10</button></a>
+</div>
+{% endif %}
+
+<script src="https://checkout.flutterwave.com/v3.js"></script>
+<script>
+function pay(){
+  FlutterwaveCheckout({
+    public_key: "{{ flw_pubk }}",
+    tx_ref: "gazelle_"+Date.now(),
+    amount: 10,
+    currency: "USD",
+    customer:{email:"{{ user.email }}"},
+    callback: function(d){
+      fetch('/verify-payment',{method:'POST'}).then(()=>location.href='/dashboard')
+    }
+  });
+}
+</script>
+</body>
+  </html>
