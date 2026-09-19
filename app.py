@@ -3,7 +3,6 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from datetime import datetime
-
 app = Flask(__name__)
 app.secret_key = 'gazelle-secret-2024'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///gazelle.db'
@@ -72,3 +71,41 @@ def login():
 def logout():
     session.clear()
     return redirect('/')
+@app.route('/dashboard')
+def dashboard():
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect('/login')
+    user = User.query.get(user_id)
+    signals = Signal.query.order_by(Signal.created_at.desc()).limit(20).all()
+    
+    # Friendly UX logic
+    free_signals = [s for s in signals if s.category == 'forex']
+    vip_signals = signals
+    
+    show_signals = vip_signals if user.tier == 'VIP' else free_signals
+    
+    return render_template('dashboard.html', 
+                         user=user, 
+                         signals=show_signals,
+                         all_signals=signals,
+                         flw_pubk=FLW_PUBK)
+
+@app.route('/upgrade')
+def upgrade_page():
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect('/login')
+    user = User.query.get(user_id)
+    return render_template('dashboard.html', user=user, upgrade_mode=True, flw_pubk=FLW_PUBK)
+
+@app.route('/verify-payment', methods=['POST'])
+def verify_payment():
+    user_id = session.get('user_id')
+    if not user_id:
+        return {'status': 'error'}
+    # Flutterwave $10 verified on frontend - upgrade
+    user = User.query.get(user_id)
+    user.tier = 'VIP'
+    db.session.commit()
+    return {'status': 'success', 'tier': 'VIP'}
