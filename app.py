@@ -1,18 +1,16 @@
 import os
-from dotenv import load_dotenv
-load_dotenv()
 from flask import Flask, render_template, request, redirect, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
-import random
 
 app = Flask(__name__)
-app.secret_key = 'gazelle-secret-2024'
+app.secret_key = os.getenv('SECRET_KEY', 'gazelle-secret-real-2024-production')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///gazelle.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-FLW_PUBK = os.getenv("FLW_PUBLIC_KEY", "FLWPUBK_TEST-...")
+
+FLW_PUBK = os.getenv("FLW_PUBLIC_KEY", "FLWPUBK_TEST-123")
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -34,7 +32,6 @@ class Signal(db.Model):
 
 with app.app_context():
     db.create_all()
-    # AUTO SEED if empty - so users never see blank
     if Signal.query.count() == 0:
         demo = [
             ('EURUSD', 'BUY', 1.0845, 1.0820, 1.0890, False),
@@ -47,58 +44,77 @@ with app.app_context():
             db.session.add(Signal(pair=p, type=t, entry=e, sl=sl, tp=tp, is_vip=vip, status='active'))
         db.session.commit()
 
-def generate_real_signals():
-    # Your strategy engine - RSI+BB+EMA+Alligator+MACD+Stoch confluence
-    # This runs every 5 mins via cron, for now seeded
-    try:
-        import yfinance as yf
-        pairs = {'EURUSD':'EURUSD=X','GBPUSD':'GBPUSD=X','USDJPY':'JPY=X','XAUUSD':'GC=F','BTCUSD':'BTC-USD'}
-        for pair,sym in pairs.items():
-            df = yf.download(sym, period='5d', interval='1h', progress=False)
-            if len(df) < 50: continue
-            # Simple real logic here - add your 6 indicators
-            # If confluence high -> update signal
-        print("Market scanned")
-    except:
-        pass
-
 @app.route('/')
-def index(): return render_template('index.html')
+def index():
+    return render_template('index.html')
+
 @app.route('/register', methods=['GET','POST'])
 def register():
-    if request.method=='POST':
-        email=request.form.get('email'); password=request.form.get('password')
-        if User.query.filter_by(email=email).first(): return 'Email exists <a href="/login">Login</a>'
-        u=User(email=email, password_hash=generate_password_hash(password), tier='FREE')
-        db.session.add(u); db.session.commit(); session['user_id']=u.id
-        return redirect('/dashboard')
+    if request.method == 'POST':
+        try:
+            email = request.form.get('email','').strip().lower()
+            password = request.form.get('password','')
+            if not email or not password:
+                return 'Email and password required <a href="/register">Back</a>'
+            if User.query.filter_by(email=email).first():
+                return 'Email exists <a href="/login">Login</a>'
+            u = User(email=email, password_hash=generate_password_hash(password), tier='FREE')
+            db.session.add(u)
+            db.session.commit()
+            session['user_id'] = u.id
+            return redirect('/dashboard')
+        except Exception as e:
+            return f"Register Error: {str(e)} - <a href='/register'>Try again</a>"
     return render_template('index.html', mode='register')
+
 @app.route('/login', methods=['GET','POST'])
 def login():
-    if request.method=='POST':
-        u=User.query.filter_by(email=request.form.get('email')).first()
-        if u and check_password_hash(u.password_hash, request.form.get('password')):
-            session['user_id']=u.id; return redirect('/dashboard')
-        return 'Invalid login'
+    if request.method == 'POST':
+        try:
+            email = request.form.get('email','').strip().lower()
+            password = request.form.get('password','')
+            u = User.query.filter_by(email=email).first()
+            if u and check_password_hash(u.password_hash, password):
+                session['user_id'] = u.id
+                return redirect('/dashboard')
+            return 'Invalid login <a href="/login">Back</a>'
+        except Exception as e:
+            return f"Login Error: {str(e)}"
     return render_template('index.html', mode='login')
-@app.route('/logout')
-def logout(): session.clear(); return redirect('/')
+
 @app.route('/dashboard')
 def dashboard():
-    uid=session.get('user_id')
-    if not uid: return redirect('/login')
-    user=User.query.get(uid)
-    signals=Signal.query.filter_by(status='active').order_by(Signal.created_at.desc()).all()
+    uid = session.get('user_id')
+    if not uid:
+        return redirect('/login')
+    user = User.query.get(uid)
+    if not user:
+        session.clear()
+        return redirect('/login')
+    signals = Signal.query.filter_by(status='active').all()
     show = signals if user.tier=='VIP' else [s for s in signals if not s.is_vip]
-    return render_template('dashboard.html', user=user, signals=show, all_signals=signals, flw_pubk=FLW_PUBK)
+    return render_template('dashboard.html', user=user, signals=show, all_signals=signals, flw_pubk=FLW_PUBK, upgrade_mode=False)
+
 @app.route('/upgrade')
 def upgrade_page():
-    uid=session.get('user_id')
+    uid = session.get('user_id')
     if not uid: return redirect('/login')
-    return render_template('dashboard.html', user=User.query.get(uid), upgrade_mode=True, flw_pubk=FLW_PUBK)
+    user = User.query.get(uid)
+    return render_template('dashboard.html', user=user, signals=[], all_signals=Signal.query.all(), flw_pubk=FLW_PUBK, upgrade_mode=True)
+
 @app.route('/verify-payment', methods=['POST'])
 def verify_payment():
-    uid=session.get('user_id')
+    uid = session.get('user_id')
     if not uid: return jsonify({'status':'error'})
-    u=User.query.get(uid); u.tier='VIP'; db.session.commit()
+    u = User.query.get(uid)
+    u.tier = 'VIP'
+    db.session.commit()
     return jsonify({'status':'success'})
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/')
+
+if __name__ == '__main__':
+    app.run(debug=True)
