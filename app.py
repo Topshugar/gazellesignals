@@ -6,6 +6,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from datetime import datetime
+
 app = Flask(__name__)
 app.secret_key = 'gazelle-secret-2024'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///gazelle.db'
@@ -17,15 +18,6 @@ db = SQLAlchemy(app)
 FLW_PUBK = os.getenv("FLW_PUBLIC_KEY")
 
 class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(120), unique=True)
-    password_hash = db.Column(db.String(200))
-    tier = db.Column(db.String(10), default='free')
-    telegram_id = db.Column(db.String(100))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-class Signal(db.Model):
-
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
@@ -40,7 +32,7 @@ class Signal(db.Model):
     entry = db.Column(db.Float, nullable=False)
     sl = db.Column(db.Float, nullable=False)
     tp = db.Column(db.Float, nullable=False)
-    category = db.Column(db.String(20), default='forex')
+    category = db.Column(db.String(10), default='forex')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 with app.app_context():
@@ -49,15 +41,16 @@ with app.app_context():
 @app.route('/')
 def index():
     return render_template('index.html')
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
         if User.query.filter_by(email=email).first():
-            return "Email exists <a href='/login'>Login</a>"
+            return 'Email exists <a href="/login">Login</a>'
         new_user = User(
-            email=email, 
+            email=email,
             password_hash=generate_password_hash(password),
             tier='FREE'
         )
@@ -76,13 +69,14 @@ def login():
         if user and check_password_hash(user.password_hash, password):
             session['user_id'] = user.id
             return redirect('/dashboard')
-        return "Invalid login"
+        return 'Invalid login'
     return render_template('index.html', mode='login')
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect('/')
+
 @app.route('/dashboard')
 def dashboard():
     user_id = session.get('user_id')
@@ -90,18 +84,14 @@ def dashboard():
         return redirect('/login')
     user = User.query.get(user_id)
     signals = Signal.query.order_by(Signal.created_at.desc()).limit(20).all()
-    
-    # Friendly UX logic
     free_signals = [s for s in signals if s.category == 'forex']
     vip_signals = signals
-    
     show_signals = vip_signals if user.tier == 'VIP' else free_signals
-    
-    return render_template('dashboard.html', 
-                         user=user, 
-                         signals=show_signals,
-                         all_signals=signals,
-                         flw_pubk=FLW_PUBK)
+    return render_template('dashboard.html',
+                           user=user,
+                           signals=show_signals,
+                           all_signals=signals,
+                           flw_pubk=FLW_PUBK)
 
 @app.route('/upgrade')
 def upgrade_page():
@@ -116,7 +106,6 @@ def verify_payment():
     user_id = session.get('user_id')
     if not user_id:
         return {'status': 'error'}
-    # Flutterwave $10 verified on frontend - upgrade
     user = User.query.get(user_id)
     user.tier = 'VIP'
     db.session.commit()
