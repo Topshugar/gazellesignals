@@ -38,3 +38,37 @@ with app.app_context():
 @app.route('/')
 def index():
     return render_template('index.html')
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        if User.query.filter_by(email=email).first():
+            return "Email exists <a href='/login'>Login</a>"
+        new_user = User(
+            email=email, 
+            password_hash=generate_password_hash(password),
+            tier='FREE'
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        session['user_id'] = new_user.id
+        return redirect('/dashboard')
+    return render_template('index.html', mode='register')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        user = User.query.filter_by(email=email).first()
+        if user and check_password_hash(user.password_hash, password):
+            session['user_id'] = user.id
+            return redirect('/dashboard')
+        return "Invalid login"
+    return render_template('index.html', mode='login')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/')
