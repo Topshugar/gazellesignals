@@ -167,11 +167,10 @@ def generate_all():
                 db.session.add(Signal(pair=sig['pair'], type=sig['type'], entry=sig['entry'], sl=sig['sl'], tp=sig['tp'], is_vip=is_vip, score=sig['score'], timeframe=sig['tf']))
                 count+=1
         # fallback demo if yfinance fails
-        if count==0:
-    db.session.add(Signal(pair='EURUSD', type='BUY', entry=1.0845, sl=1.082, tp=1.089, is_vip=False, score=74, timeframe='SCALP 15M'))
-    db.session.add(Signal(pair='BTCUSD', type='BUY', entry=65000, sl=64000, tp=67000, is_vip=True, score=88, timeframe='SCALP 15M'))
-             db.session.commit()
-
+            if count==0:
+        db.session.add(Signal(pair='EURUSD', type='BUY', entry=1.0845, sl=1.082, tp=1.089, is_vip=False, score=74, timeframe='SCALP 15M'))
+        db.session.add(Signal(pair='BTCUSD', type='BUY', entry=65000, sl=64000, tp=67000, is_vip=True, score=88, timeframe='SCALP 15M'))
+        db.session.commit() 
 def page(body):
     return f"<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{{background:#0e0e0e;color:#fff;font-family:Arial;padding:20px;max-width:600px;margin:0 auto}}input{{width:100%;padding:14px;margin:8px 0;border-radius:10px;border:1px solid #333;background:#1c1c1e;color:#fff;box-sizing:border-box}}button{{width:100%;padding:14px;background:#FFD700;border:0;border-radius:10px;font-weight:800;cursor:pointer}} .card{{background:#1c1c1e;border:1px solid #333;border-radius:16px;padding:14px;margin:12px 0}} .vip{{border-color:#FFD700}} a{{color:#FFD700}} .badge{{background:#FFD700;color:#000;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:800}}</style></head><body>{body}</body></html>"
 
