@@ -342,9 +342,15 @@ def subscribe_confirm():
     return "VIP Activated! <a href='/'>Go to Dashboard</a>"
 
 with app.app_context():
-    db.create_all()
-    if Signal.query.count() == 0:
+    try:
+        db.create_all()
+        if Signal.query.count() == 0:
+            generate_all()
+        # Try to read new column to test
+        User.query.first()
+    except Exception as e:
+        print(f"DB needs reset: {e}")
+        db.drop_all()
+        db.create_all()
         generate_all()
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+        print("DB reset done!")
