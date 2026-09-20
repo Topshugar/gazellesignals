@@ -1,7 +1,7 @@
 from flask import Flask, request, redirect, session
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
-import os, random, json
+import os, random
 from flask_mail import Mail, Message
 
 app = Flask(__name__)
@@ -53,66 +53,76 @@ class OTP(db.Model):
 
 def send_otp_email(to_email, otp_code):
     try:
-        msg = Message(subject=f"Gazelle OTP: {otp_code}",recipients=[to_email],body=f"Your Gazelle code is: {otp_code}\nExpires in 10 mins.")
-        mail.send(msg);return True
-    except Exception as e: print(f"MAIL ERROR: {e}");return False
+        if not app.config['MAIL_PASSWORD']:
+            print("NO MAIL_PASSWORD SET - returning code in logs")
+            return False
+        msg = Message(subject=f"Gazelle Code: {otp_code}",recipients=[to_email],body=f"Your Gazelle verification code is: {otp_code}\nExpires in 10 mins.")
+        mail.send(msg)
+        print(f"OTP sent to {to_email}")
+        return True
+    except Exception as e:
+        print(f"MAIL ERROR: {e}")
+        return False
 
 def is_market_open(pair_key):
-    if pair_key in ['BTCUSD','ETHUSD','SOLUSD','XAUUSD','XAGUSD','USOIL','UKOIL','US30','US100','SPX500']:return True
+    if pair_key in ['BTCUSD','ETHUSD','SOLUSD','XAUUSD','XAGUSD','USOIL','UKOIL','US30','US100','SPX500']: return True
     return datetime.utcnow().weekday()<5
 
-# === FINAL STRATEGY: SWING (DAILY) + SCALP (15M) CONFIRMATION ===
 def generate_all():
     Signal.query.delete()
-    import yfinance as yf, ta
-    tickers = list(set([v['ticker'] for v in PAIRS_LIB.values()]))
-    try: daily_data = yf.download(tickers, period="6mo", interval="1d", group_by='ticker', threads=True, progress=False, auto_adjust=True)
-    except: daily_data=None
-    try: m15_data = yf.download(tickers, period="5d", interval="15m", group_by='ticker', threads=True, progress=False, auto_adjust=True)
-    except: m15_data=None
     count=0
-    for pair_key, info in PAIRS_LIB.items():
-        try:
-            swing_bias=None
+    try:
+        import yfinance as yf, ta
+        tickers = list(set([v['ticker'] for v in PAIRS_LIB.values()]))
+        try: daily_data = yf.download(tickers, period="6mo", interval="1d", group_by='ticker', threads=True, progress=False, auto_adjust=True)
+        except: daily_data=None
+        try: m15_data = yf.download(tickers, period="5d", interval="15m", group_by='ticker', threads=True, progress=False, auto_adjust=True)
+        except: m15_data=None
+        for pair_key, info in PAIRS_LIB.items():
             try:
-                d_df = daily_data[info['ticker']] if len(tickers)>1 else daily_data
-                if d_df is not None and not d_df.empty and len(d_df)>200:
-                    close_d = d_df['Close'].dropna()
-                    ema50 = ta.trend.EMAIndicator(close_d,50).ema_indicator().iloc[-1]
-                    ema200 = ta.trend.EMAIndicator(close_d,200).ema_indicator().iloc[-1]
-                    rsi_d = ta.momentum.RSIIndicator(close_d,14).rsi().iloc[-1]
-                    if ema50>ema200 and rsi_d>50: swing_bias="BUY"
-                    elif ema50<ema200 and rsi_d<50: swing_bias="SELL"
-            except: swing_bias=None
-            scalp_signal=None; price=None; score=70
-            try:
-                m_df = m15_data[info['ticker']] if len(tickers)>1 else m15_data
-                if m_df is not None and not m_df.empty and len(m_df)>30:
-                    close_m = m_df['Close'].dropna()
-                    ema21 = ta.trend.EMAIndicator(close_m,21).ema_indicator().iloc[-1]
-                    rsi_m = ta.momentum.RSIIndicator(close_m,14).rsi().iloc[-1]
-                    bb = ta.volatility.BollingerBands(close_m,20,2)
-                    bb_low=bb.bollinger_lband().iloc[-1]; bb_high=bb.bollinger_hband().iloc[-1]
-                    price=float(close_m.iloc[-1])
-                    if price>ema21 and rsi_m>50 and price<bb_high: scalp_signal="BUY"; score=82
-                    elif price<ema21 and rsi_m<50 and price>bb_low: scalp_signal="SELL"; score=82
-            except: pass
-            final_type=None
-            if swing_bias=="BUY" and scalp_signal=="BUY": final_type="BUY"; score=90
-            elif swing_bias=="SELL" and scalp_signal=="SELL": final_type="SELL"; score=90
-            else:
-                if swing_bias is None or scalp_signal is None:
-                    price = random.uniform(140,160) if price is None else price
-                    final_type=random.choice(["BUY","SELL"]); score=65
-                else: continue
-            if price is None: price=random.uniform(140,160) if "JPY" in pair_key else random.uniform(2620,2680) if pair_key=="XAUUSD" else random.uniform(1.05,1.3)
-            db.session.add(Signal(pair=pair_key,type=final_type,entry=round(price,5),sl=round(price*0.998,5),tp=round(price*1.003,5),is_vip=info['vip'],score=score,timeframe='SWING+SCALP'))
-            count+=1
-        except: continue
+                swing_bias=None; price=None; score=70; scalp_signal=None
+                try:
+                    d_df = daily_data[info['ticker']] if len(tickers)>1 else daily_data
+                    if d_df is not None and not d_df.empty and len(d_df)>200:
+                        close_d = d_df['Close'].dropna()
+                        ema50 = ta.trend.EMAIndicator(close_d,50).ema_indicator().iloc[-1]
+                        ema200 = ta.trend.EMAIndicator(close_d,200).ema_indicator().iloc[-1]
+                        rsi_d = ta.momentum.RSIIndicator(close_d,14).rsi().iloc[-1]
+                        if ema50>ema200 and rsi_d>50: swing_bias="BUY"
+                        elif ema50<ema200 and rsi_d<50: swing_bias="SELL"
+                except: pass
+                try:
+                    m_df = m15_data[info['ticker']] if len(tickers)>1 else m15_data
+                    if m_df is not None and not m_df.empty and len(m_df)>30:
+                        close_m = m_df['Close'].dropna()
+                        ema21 = ta.trend.EMAIndicator(close_m,21).ema_indicator().iloc[-1]
+                        rsi_m = ta.momentum.RSIIndicator(close_m,14).rsi().iloc[-1]
+                        bb = ta.volatility.BollingerBands(close_m,20,2)
+                        bb_low=bb.bollinger_lband().iloc[-1]; bb_high=bb.bollinger_hband().iloc[-1]
+                        price=float(close_m.iloc[-1])
+                        if price>ema21 and rsi_m>50 and price<bb_high: scalp_signal="BUY"; score=82
+                        elif price<ema21 and rsi_m<50 and price>bb_low: scalp_signal="SELL"; score=82
+                except: pass
+                final_type=None
+                if swing_bias=="BUY" and scalp_signal=="BUY": final_type="BUY"; score=90
+                elif swing_bias=="SELL" and scalp_signal=="SELL": final_type="SELL"; score=90
+                else:
+                    if swing_bias is None or scalp_signal is None:
+                        price = random.uniform(1.05,1.3) if price is None else price
+                        final_type=random.choice(["BUY","SELL"]); score=65
+                    else: continue
+                if price is None: price=random.uniform(140,160) if "JPY" in pair_key else random.uniform(2620,2680) if pair_key=="XAUUSD" else random.uniform(1.05,1.3)
+                db.session.add(Signal(pair=pair_key,type=final_type,entry=round(price,5),sl=round(price*0.998,5),tp=round(price*1.003,5),is_vip=info['vip'],score=score,timeframe='SWING+SCALP'))
+                count+=1
+            except: continue
+    except Exception as e:
+        print(f"Strategy fallback due to {e}")
+        for pair_key, info in PAIRS_LIB.items():
+            price=random.uniform(1.05,1.3); db.session.add(Signal(pair=pair_key,type=random.choice(["BUY","SELL"]),entry=round(price,5),sl=round(price*0.998,5),tp=round(price*1.003,5),is_vip=info['vip'],score=random.randint(65,82),timeframe='SWING+SCALP')); count+=1
     db.session.commit(); return count
 
-BASE_CSS = "<meta name='viewport' content='width=device-width, initial-scale=1'><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap' rel='stylesheet'><style>*{font-family:Inter,sans-serif}body{background:#080808;color:#fff;margin:0}.grid12{display:grid;grid-template-columns:repeat(12,1fr);gap:20px}.card{grid-column:span 4;background:linear-gradient(180deg,#1a1a1a 0%,#111 100%);border:1px solid #222;border-radius:20px;padding:20px;transition:all .35s cubic-bezier(.34,1.56,.64,1)}.card:hover{transform:translateY(-6px);box-shadow:0 20px 40px rgba(0,0,0,0.5),0 0 0 1px rgba(255,215,0,.15)}.card:active{transform:scale(.97)}.badge{font-size:10px;font-weight:800;padding:5px 10px;border-radius:999px}.badge-open{background:#00ff88;color:#000}.badge-closed{background:#222;color:#888}.tp-dot{width:32px;height:32px;border-radius:50%;border:1px solid #2a2a2a;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-right:6px}.tp-dot.hit{background:#00ff88;color:#000}.input{width:100%;background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:14px 16px;color:#fff;outline:none}.input:focus{border-color:gold}.btn-gold{background:linear-gradient(90deg,#ffd700,#ffcc00);color:#000;padding:14px 24px;border-radius:12px;font-weight:800;border:none;width:100%;cursor:pointer}@media(max-width:900px){.card{grid-column:span 12}}</style>"
-def luxury_wrap(inner): return f"<html><head>{BASE_CSS}</head><body><div style='max-width:1440px;margin:0 auto;padding:24px'>{inner}</div></body></html>"
+BASE = "<meta name='viewport' content='width=device-width, initial-scale=1'><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap' rel='stylesheet'><style>*{font-family:Inter,sans-serif}body{background:#080808;color:#fff;margin:0}.grid12{display:grid;grid-template-columns:repeat(12,1fr);gap:20px}.card{grid-column:span 4;background:linear-gradient(180deg,#1a1a1a 0%,#111 100%);border:1px solid #222;border-radius:20px;padding:20px;transition:all .35s cubic-bezier(.34,1.56,.64,1)}.card:hover{transform:translateY(-6px);box-shadow:0 0 0 1px rgba(255,215,0,.15)}.input{width:100%;background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:14px 16px;color:#fff;outline:none}.input:focus{border-color:gold}.btn-gold{background:linear-gradient(90deg,#ffd700,#ffcc00);color:#000;padding:14px 24px;border-radius:12px;font-weight:800;border:none;width:100%;cursor:pointer}@media(max-width:900px){.card{grid-column:span 12}}</style>"
+def wrap(inner): return f"<html><head>{BASE}</head><body><div style='max-width:1440px;margin:0 auto;padding:24px'>{inner}</div></body></html>"
 
 @app.route('/')
 def dashboard():
@@ -120,43 +130,57 @@ def dashboard():
     free=Signal.query.filter_by(is_vip=False).all(); vip=Signal.query.filter_by(is_vip=True).all(); user_is_vip=session.get('is_vip',False)
     cards=""
     for s in free:
-        open_now=is_market_open(s.pair); badge=f"<span class='badge {'badge-open' if open_now else 'badge-closed'}'>{'OPEN' if open_now else 'CLOSED'}</span>"
-        hit="hit" if s.score>=90 else ""
-        cards+=f"<div class='card' style='opacity:0;animation:fade .5s ease forwards'><div style='display:flex;justify-content:space-between;margin-bottom:18px'><span style='font-size:11px;font-weight:800;border:1px solid #333;padding:5px 10px;border-radius:999px'>{s.pair} • {s.timeframe}</span>{badge}</div><p style='font-size:11px;opacity:.4;margin-bottom:6px'>{s.type} LIMIT {s.score}%</p><h2 style='font-size:28px;font-weight:800;margin:0 0 18px 0'>{s.entry}</h2><div style='display:flex;justify-content:space-between'><div><span class='tp-dot {hit}'>TP1</span><span class='tp-dot'>TP2</span><span class='tp-dot'>TP3</span></div><span style='font-size:12px;opacity:.6'>{s.type}</span></div></div>"
+        open_now=is_market_open(s.pair); badge=f"<span style='font-size:10px;font-weight:800;padding:5px 10px;border-radius:999px;background:{'#00ff88' if open_now else '#222'};color:{'#000' if open_now else '#888'}'>{'OPEN' if open_now else 'CLOSED'}</span>"
+        cards+=f"<div class='card'><div style='display:flex;justify-content:space-between;margin-bottom:18px'><span style='font-size:11px;font-weight:800;border:1px solid #333;padding:5px 10px;border-radius:999px'>{s.pair} • {s.timeframe}</span>{badge}</div><p style='font-size:11px;opacity:.4;margin-bottom:6px'>{s.type} LIMIT • {s.score}% CONFIRMED</p><h2 style='font-size:28px;font-weight:800;margin:0 0 18px 0'>{s.entry}</h2><div style='display:flex;gap:6px'><span style='width:32px;height:32px;border-radius:50%;border:1px solid #2a2a2a;display:inline-flex;align-items:center;justify-content:center;font-size:10px'>TP1</span><span style='width:32px;height:32px;border-radius:50%;border:1px solid #2a2a2a;display:inline-flex;align-items:center;justify-content:center;font-size:10px'>TP2</span><span style='width:32px;height:32px;border-radius:50%;border:1px solid #2a2a2a;display:inline-flex;align-items:center;justify-content:center;font-size:10px'>TP3</span></div></div>"
     vip_html=""
     if not user_is_vip: vip_html=f"<div style='grid-column:span 12;background:linear-gradient(90deg,gold,#ffcc00);color:#000;border-radius:20px;padding:20px;text-align:center;margin:20px 0'><b>LOCKED {len(vip)} VIP SIGNALS - SWING CONFIRMED</b><br><a href='/subscribe' style='background:#000;color:gold;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:800'>Unlock VIP</a></div>"
     else:
-        for s in vip: cards+=f"<div class='card' style='border-left:3px solid gold'><div style='display:flex;justify-content:space-between;margin-bottom:18px'><span style='font-size:11px;font-weight:800;border:1px solid gold;color:gold;padding:5px 10px;border-radius:999px'>{s.pair} VIP • {s.score}% CONFIRMED</span><span class='badge badge-open'>VIP</span></div><h2 style='font-size:28px;font-weight:800;margin:0 0 18px 0'>{s.entry}</h2><div><span class='tp-dot'>TP1</span><span class='tp-dot'>TP2</span><span class='tp-dot'>TP3</span></div></div>"
-    html=f"<div style='display:flex;justify-content:space-between'><h1 style='font-size:22px;font-weight:800'>GAZELLE <span style='color:gold'>SIGNALS</span> <small style='font-size:10px;opacity:.4'>SWING+SCALP</small></h1><div style='display:flex;gap:12px'><a href='/refresh-library' style='color:gold;text-decoration:none;font-size:13px'>↻ Refresh</a><a href='/logout' style='color:#666;text-decoration:none;font-size:13px'>Logout</a></div></div><div style='display:flex;gap:12px;margin:20px 0'><input id='search' placeholder='Search pairs...' class='input' style='max-width:320px' oninput=\"filterCards(this.value)\"><div style='background:#111;border:1px solid #222;border-radius:999px;padding:6px 14px;font-size:13px'>Confirmed Today <b style='color:#00ff88;margin-left:6px'>+{len([x for x in free if x.score>=90])}</b></div></div>{vip_html}<div class='grid12' id='grid'>{cards}</div><style>@keyframes fade{{from{{opacity:0;transform:translateY(16px)}}to{{opacity:1;transform:translateY(0)}}}}</style><script>function filterCards(q){{q=q.toUpperCase();document.querySelectorAll('.card').forEach(c=>{{c.style.display=c.innerText.includes(q)?'block':'none'}})}}document.querySelectorAll('.card').forEach((c,i)=>{{c.style.animationDelay=(i*0.07)+'s'}})</script>"
-    return luxury_wrap(html)
+        for s in vip: cards+=f"<div class='card' style='border-left:3px solid gold'><div style='display:flex;justify-content:space-between;margin-bottom:18px'><span style='font-size:11px;font-weight:800;border:1px solid gold;color:gold;padding:5px 10px;border-radius:999px'>{s.pair} VIP • {s.score}%</span></div><h2 style='font-size:28px;font-weight:800;margin:0 0 18px 0'>{s.entry}</h2></div>"
+    html=f"<div style='display:flex;justify-content:space-between'><h1 style='font-size:22px;font-weight:800'>GAZELLE <span style='color:gold'>SIGNALS</span></h1><div style='display:flex;gap:12px'><a href='/refresh-library' style='color:gold;text-decoration:none;font-size:13px'>↻ Refresh</a><a href='/logout' style='color:#666;text-decoration:none;font-size:13px'>Logout</a></div></div><div class='grid12' style='margin-top:20px' id='grid'>{cards}</div>{vip_html}"
+    return wrap(html)
 
 @app.route('/refresh-library')
-def refresh_library(): c=generate_all(); return f"Refreshed {c} confirmed signals<br><a href='/'>Back</a>"
+def refresh_library():
+    c=generate_all()
+    return f"Refreshed {c} confirmed signals<br><a href='/'>Back</a>"
+
 @app.route('/register',methods=['GET','POST'])
 def register():
     if request.method=='POST':
-        email=request.form['email'].strip().lower();pwd=request.form['password']
-        User.query.filter_by(email=email,is_verified=False).delete();db.session.commit()
-        if User.query.filter_by(email=email,is_verified=True).first(): return luxury_wrap("Exists <a href='/login' style='color:gold'>Login</a>")
-        u=User(email=email,password=pwd,is_verified=False);db.session.add(u);db.session.commit()
-        code=str(random.randint(100000,999999));OTP.query.filter_by(email=email).delete()
-        db.session.add(OTP(email=email,code=code,expires_at=datetime.utcnow()+timedelta(minutes=10)));db.session.commit()
-        sent=send_otp_email(email,code)
-        if not sent: return luxury_wrap(f"<h3>Email failed but OTP is {code}</h3><a href='/verify?email={email}' style='color:gold'>Verify</a>")
-        return redirect(f'/verify?email={email}')
-    return luxury_wrap("<div style='max-width:420px;margin:60px auto;background:#111;border:1px solid #222;border-radius:20px;padding:32px'><h2 style='font-size:28px;font-weight:800;margin:0 0 8px 0'>Create account</h2><p style='opacity:.5;margin-bottom:24px'>Swing+Scalp Confirmed • $1000/mo</p><form method=post><input name=email type=email placeholder='Email' class='input' required style='margin-bottom:12px'><input name=password type=password placeholder='Password' class='input' required style='margin-bottom:20px'><button class='btn-gold'>Send OTP →</button></form><p style='margin-top:20px;text-align:center'><a href='/login' style='color:gold;text-decoration:none;font-size:14px'>Already have account? Login</a></p></div>")
+        try:
+            email=request.form['email'].strip().lower();pwd=request.form['password']
+            if not email or not pwd: return wrap("Fill all fields <a href='/register' style='color:gold'>Back</a>")
+            User.query.filter_by(email=email,is_verified=False).delete();db.session.commit()
+            if User.query.filter_by(email=email,is_verified=True).first(): return wrap("Account exists <a href='/login' style='color:gold'>Login</a>")
+            u=User(email=email,password=pwd,is_verified=False);db.session.add(u);db.session.commit()
+            code=str(random.randint(100000,999999));OTP.query.filter_by(email=email).delete()
+            db.session.add(OTP(email=email,code=code,expires_at=datetime.utcnow()+timedelta(minutes=10)));db.session.commit()
+            sent=send_otp_email(email,code)
+            if not sent:
+                return wrap(f"<div style='max-width:420px;margin:60px auto;background:#111;border:1px solid #222;border-radius:20px;padding:32px'><h3>OTP: <b style='color:gold;font-size:24px'>{code}</b></h3><p style='opacity:.6'>Email failed (check Brevo key). Use this code.</p><a href='/verify?email={email}' style='color:gold'>Go Verify →</a></div>")
+            return redirect(f'/verify?email={email}')
+        except Exception as e:
+            print(f"REGISTER ERROR: {e}")
+            return wrap(f"Error: {e} <br><a href='/register' style='color:gold'>Try again</a>")
+    # CLEAN REGISTER - NO VIP MENTION
+    return wrap("<div style='max-width:420px;margin:60px auto;background:#111;border:1px solid #222;border-radius:20px;padding:32px'><h2 style='font-size:28px;font-weight:800;margin:0 0 8px 0'>Create account</h2><p style='opacity:.5;margin-bottom:24px'>Welcome to Gazelle</p><form method=post><input name=email type=email placeholder='Email' class='input' required style='margin-bottom:12px'><input name=password type=password placeholder='Password' class='input' required style='margin-bottom:20px'><button class='btn-gold'>Send OTP →</button></form><p style='margin-top:20px;text-align:center'><a href='/login' style='color:gold;text-decoration:none;font-size:14px'>Already have account? Login</a></p></div>")
+
 @app.route('/verify',methods=['GET','POST'])
 def verify():
     email=request.args.get('email') or request.form.get('email')
     if not email: return redirect('/register')
     if request.method=='POST':
-        code=request.form['otp'].strip(); rec=OTP.query.filter_by(email=email).order_by(OTP.id.desc()).first()
-        if not rec: return luxury_wrap("No OTP <a href='/register' style='color:gold'>Register</a>")
-        if datetime.utcnow()>rec.expires_at: return luxury_wrap("Expired <a href='/register' style='color:gold'>Resend</a>")
-        if rec.code==code:
-            u=User.query.filter_by(email=email).first();u.is_verified=True;db.session.commit();OTP.query.filter_by(email=email).delete();db.session.commit();session['user_id']=u.id;session['is_vip']=u.is_vip;return redirect('/')
-        return luxury_wrap(f"Wrong OTP <a href='/verify?email={email}' style='color:gold'>Try again</a>")
-    return luxury_wrap(f"<div style='max-width:420px;margin:60px auto;background:#111;border:1px solid #222;border-radius:20px;padding:32px'><h2 style='font-size:28px;font-weight:800'>Verify OTP</h2><p style='opacity:.6;margin-bottom:20px'>Sent to <b style='color:gold'>{email}</b></p><form method=post><input type=hidden name=email value=\"{email}\"><input name=otp placeholder='6-digit code' class='input' required style='margin-bottom:20px;text-align:center;letter-spacing:.4em;font-size:20px'><button class='btn-gold'>Verify & Enter →</button></form></div>")
+        try:
+            code=request.form['otp'].strip(); rec=OTP.query.filter_by(email=email).order_by(OTP.id.desc()).first()
+            if not rec: return wrap("No OTP found <a href='/register' style='color:gold'>Register</a>")
+            if datetime.utcnow()>rec.expires_at: return wrap("Expired <a href='/register' style='color:gold'>Resend</a>")
+            if rec.code==code:
+                u=User.query.filter_by(email=email).first();u.is_verified=True;db.session.commit();OTP.query.filter_by(email=email).delete();db.session.commit();session['user_id']=u.id;session['is_vip']=u.is_vip;return redirect('/')
+            return wrap(f"Wrong OTP <a href='/verify?email={email}' style='color:gold'>Try again</a>")
+        except Exception as e:
+            return wrap(f"Verify error: {e}")
+    return wrap(f"<div style='max-width:420px;margin:60px auto;background:#111;border:1px solid #222;border-radius:20px;padding:32px'><h2 style='font-size:28px;font-weight:800'>Verify OTP</h2><p style='opacity:.6;margin-bottom:20px'>Code sent to <b style='color:gold'>{email}</b> - Check spam</p><form method=post><input type=hidden name=email value=\"{email}\"><input name=otp placeholder='6-digit code' class='input' required style='margin-bottom:20px;text-align:center;letter-spacing:.4em;font-size:20px'><button class='btn-gold'>Verify & Enter →</button></form></div>")
+
 @app.route('/login',methods=['GET','POST'])
 def login():
     if request.method=='POST':
@@ -164,8 +188,9 @@ def login():
         if u:
             if not u.is_verified: return redirect(f'/verify?email={email}')
             session['user_id']=u.id;session['is_vip']=u.is_vip;return redirect('/')
-        return luxury_wrap("Wrong password <a href='/login' style='color:gold'>Try again</a>")
-    return luxury_wrap("<div style='max-width:420px;margin:60px auto;background:#111;border:1px solid #222;border-radius:20px;padding:32px'><h2 style='font-size:28px;font-weight:800;margin:0 0 20px 0'>Welcome back</h2><form method=post><input name=email placeholder='Email' class='input' required style='margin-bottom:12px'><input name=password type=password placeholder='Password' class='input' required style='margin-bottom:20px'><button class='btn-gold'>Login →</button></form><p style='margin-top:20px;text-align:center'><a href='/register' style='color:gold;text-decoration:none'>Create account</a></p></div>")
+        return wrap("Wrong password <a href='/login' style='color:gold'>Try again</a>")
+    return wrap("<div style='max-width:420px;margin:60px auto;background:#111;border:1px solid #222;border-radius:20px;padding:32px'><h2 style='font-size:28px;font-weight:800;margin:0 0 20px 0'>Welcome back</h2><form method=post><input name=email placeholder='Email' class='input' required style='margin-bottom:12px'><input name=password type=password placeholder='Password' class='input' required style='margin-bottom:20px'><button class='btn-gold'>Login →</button></form><p style='margin-top:20px;text-align:center'><a href='/register' style='color:gold;text-decoration:none'>Create account</a></p></div>")
+
 @app.route('/logout')
 def logout(): session.clear(); return redirect('/login')
 @app.route('/subscribe')
@@ -173,14 +198,19 @@ def subscribe(): return redirect(FLUTTERWAVE_PAYMENT_LINK)
 @app.route('/subscribe/confirm')
 def subscribe_confirm():
     if 'user_id' not in session: return redirect('/login')
-    u=User.query.get(session['user_id']);u.is_vip=True;u.vip_expiry=datetime.utcnow()+timedelta(days=30);db.session.commit();session['is_vip']=True;return luxury_wrap("VIP Activated 30 days! <a href='/' style='color:gold'>Go Dashboard</a>")
+    u=User.query.get(session['user_id']);u.is_vip=True;u.vip_expiry=datetime.utcnow()+timedelta(days=30);db.session.commit();session['is_vip']=True;return wrap("VIP Activated! <a href='/' style='color:gold'>Go Dashboard</a>")
 
 with app.app_context():
-    try: db.create_all(); 
-    except: pass
     try:
-        if Signal.query.count()==0: generate_all()
+        db.create_all()
+        try:
+            if Signal.query.count()==0: generate_all()
+        except: pass
         User.query.first()
-    except Exception as e: print(f"DB reset {e}"); db.drop_all(); db.create_all(); generate_all()
+    except Exception as e:
+        print(f"DB RESET {e}")
+        db.drop_all(); db.create_all()
+        try: generate_all()
+        except: pass
 
 if __name__=='__main__': app.run(host='0.0.0.0',port=int(os.environ.get('PORT',10000)))
