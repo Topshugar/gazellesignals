@@ -1,4 +1,4 @@
-import os, math
+yimport os, math
 from flask import Flask, request, redirect, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -119,13 +119,41 @@ def get_live_signal(ticker, pair_name):
         print(f"Error {pair_name}: {e}")
         return None
 
-PAIRS = {
-    'EURUSD': 'EURUSD=X',
-    'GBPUSD': 'GBPUSD=X',
-    'USDJPY': 'USDJPY=X',
-    'XAUUSD': 'GC=F',
-    'BTCUSD': 'BTC-USD'
+PAIRS_LIB = {
+    # ===== FREE FOREX - MAJORS (7) =====
+    'EURUSD': {'ticker':'EURUSD=X', 'name':'Euro / US Dollar', 'cat':'Forex Major', 'vip':False, 'icon':'€$'},
+    'GBPUSD': {'ticker':'GBPUSD=X', 'name':'British Pound / Dollar', 'cat':'Forex Major', 'vip':False, 'icon':'£$'},
+    'USDJPY': {'ticker':'USDJPY=X', 'name':'Dollar / Japanese Yen', 'cat':'Forex Major', 'vip':False, 'icon':'$¥'},
+    'AUDUSD': {'ticker':'AUDUSD=X', 'name':'Aussie / Dollar', 'cat':'Forex Major', 'vip':False, 'icon':'A$'},
+    'USDCAD': {'ticker':'USDCAD=X', 'name':'Dollar / Canadian', 'cat':'Forex Major', 'vip':False, 'icon':'$C'},
+    'NZDUSD': {'ticker':'NZDUSD=X', 'name':'NZD / Dollar', 'cat':'Forex Major', 'vip':False, 'icon':'N$'},
+    'USDCHF': {'ticker':'USDCHF=X', 'name':'Dollar / Swiss Franc', 'cat':'Forex Major', 'vip':False, 'icon':'$F'},
+
+    # ===== FREE FOREX - MINORS / CROSSES (10) =====
+    'EURGBP': {'ticker':'EURGBP=X', 'name':'Euro / Pound', 'cat':'Forex Cross', 'vip':False, 'icon':'€£'},
+    'EURJPY': {'ticker':'EURJPY=X', 'name':'Euro / Yen', 'cat':'Forex Cross', 'vip':False, 'icon':'€¥'},
+    'GBPJPY': {'ticker':'GBPJPY=X', 'name':'Pound / Yen', 'cat':'Forex Cross', 'vip':False, 'icon':'£¥'},
+    'AUDJPY': {'ticker':'AUDJPY=X', 'name':'Aussie / Yen', 'cat':'Forex Cross', 'vip':False, 'icon':'A¥'},
+    'EURCAD': {'ticker':'EURCAD=X', 'name':'Euro / Canadian', 'cat':'Forex Cross', 'vip':False, 'icon':'€C'},
+    'GBPCAD': {'ticker':'GBPCAD=X', 'name':'Pound / Canadian', 'cat':'Forex Cross', 'vip':False, 'icon':'£C'},
+    'AUDCAD': {'ticker':'AUDCAD=X', 'name':'Aussie / Canadian', 'cat':'Forex Cross', 'vip':False, 'icon':'AC'},
+    'EURAUD': {'ticker':'EURAUD=X', 'name':'Euro / Aussie', 'cat':'Forex Cross', 'vip':False, 'icon':'€A'},
+    'GBPAUD': {'ticker':'GBPAUD=X', 'name':'Pound / Aussie', 'cat':'Forex Cross', 'vip':False, 'icon':'£A'},
+    'CADJPY': {'ticker':'CADJPY=X', 'name':'Canadian / Yen', 'cat':'Forex Cross', 'vip':False, 'icon':'C¥'},
+
+    # ===== VIP - NON FOREX ($1000) =====
+    'XAUUSD': {'ticker':'GC=F', 'name':'Gold / Dollar', 'cat':'Metals', 'vip':True, 'icon':'🥇'},
+    'XAGUSD': {'ticker':'SI=F', 'name':'Silver / Dollar', 'cat':'Metals', 'vip':True, 'icon':'🥈'},
+    'BTCUSD': {'ticker':'BTC-USD', 'name':'Bitcoin / Dollar', 'cat':'Crypto', 'vip':True, 'icon':'₿'},
+    'ETHUSD': {'ticker':'ETH-USD', 'name':'Ethereum / Dollar', 'cat':'Crypto', 'vip':True, 'icon':'Ξ'},
+    'SOLUSD': {'ticker':'SOL-USD', 'name':'Solana / Dollar', 'cat':'Crypto', 'vip':True, 'icon':'◎'},
+    'US30': {'ticker':'^DJI', 'name':'Dow Jones 30', 'cat':'Indices', 'vip':True, 'icon':'🇺🇸'},
+    'NAS100': {'ticker':'^IXIC', 'name':'NASDAQ 100', 'cat':'Indices', 'vip':True, 'icon':'💻'},
+    'SPX500': {'ticker':'^GSPC', 'name':'S&P 500', 'cat':'Indices', 'vip':True, 'icon':'📊'},
+    'USOIL': {'ticker':'CL=F', 'name':'Crude Oil', 'cat':'Energy', 'vip':True, 'icon':'🛢️'},
 }
+
+VIP_PRICE = 1000
 
 def generate_all():
     with app.app_context():
