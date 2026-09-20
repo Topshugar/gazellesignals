@@ -1,4 +1,4 @@
-yimport os, math
+import os, math
 from flask import Flask, request, redirect, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -168,9 +168,9 @@ def generate_all():
                 count+=1
         # fallback demo if yfinance fails
         if count==0:
-            for p,t,e,sl,tp,v in [('EURUSD','BUY',1.0845,1.082,1.089,False),('GBPUSD','SELL',1.272,1.275,1.267,False),('USDJPY','BUY',149.8,149.3,150.6,False),('XAUUSD','BUY',2025,2015,2045,True),('BTCUSD','SELL',43200,43800,42100,True)]:
-                db.session.add(Signal(pair=p,type=t,entry=e,sl=sl,tp=tp,is_vip=v,score=78,timeframe='SCALP 15M'))
-        db.session.commit()
+    db.session.add(Signal(pair='EURUSD', type='BUY', entry=1.0845, sl=1.082, tp=1.089, is_vip=False, score=74, timeframe='SCALP 15M'))
+    db.session.add(Signal(pair='BTCUSD', type='BUY', entry=65000, sl=64000, tp=67000, is_vip=True, score=88, timeframe='SCALP 15M'))
+             db.session.commit()
 
 def page(body):
     return f"<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{{background:#0e0e0e;color:#fff;font-family:Arial;padding:20px;max-width:600px;margin:0 auto}}input{{width:100%;padding:14px;margin:8px 0;border-radius:10px;border:1px solid #333;background:#1c1c1e;color:#fff;box-sizing:border-box}}button{{width:100%;padding:14px;background:#FFD700;border:0;border-radius:10px;font-weight:800;cursor:pointer}} .card{{background:#1c1c1e;border:1px solid #333;border-radius:16px;padding:14px;margin:12px 0}} .vip{{border-color:#FFD700}} a{{color:#FFD700}} .badge{{background:#FFD700;color:#000;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:800}}</style></head><body>{body}</body></html>"
