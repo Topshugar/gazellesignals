@@ -3,3 +3,6 @@ Flask-SQLAlchemy
 Flask-Mail
 gunicorn
 python-dotenv
+yfinance
+ta
+requests
