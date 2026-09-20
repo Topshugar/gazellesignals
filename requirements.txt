@@ -1,6 +1,5 @@
 Flask
 Flask-SQLAlchemy
-Flask-Mail
 yfinance
 ta
 pandas
