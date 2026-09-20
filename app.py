@@ -3,14 +3,26 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
 import random
+from flask_mail import Mail, Message
 
 app = Flask(__name__)
 app.secret_key = "gazelle_vip_2025"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///signals.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# --- BREVO MAIL CONFIG - FIXED FOR YAHOO/GMAIL/ALL ---
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp-relay.brevo.com')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', '587'))
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME', 'ba3bbb001@smtp-brevo.com')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USE_SSL'] = False
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_FROM', 'gazellesignal@gmail.com')
+
+mail = Mail(app)
 db = SQLAlchemy(app)
 
-# YOUR LIVE $1000 FLUTTERWAVE LINK - SINGLE CHARGE
+# YOUR LIVE $1000 FLUTTERWAVE LINK
 FLUTTERWAVE_PAYMENT_LINK = "https://flutterwave.com/pay/3sjsabbo3lqx"
 
 PAIRS_LIB = {
@@ -22,7 +34,7 @@ PAIRS_LIB = {
     'EURAUD': {'ticker': 'EURAUD=X', 'name': 'EUR/AUD', 'vip': False},
     'EURCAD': {'ticker': 'EURCAD=X', 'name': 'EUR/CAD', 'vip': False},
     'EURCHF': {'ticker': 'EURCHF=X', 'name': 'EUR/CHF', 'vip': False},
-    'EURGBP': {'ticker': 'EURGBP=X', 'name': 'EUR/GBP', 'vip': False},
+    'EURGBP': {'ticker': 'EUR/GBP=X', 'name': 'EUR/GBP', 'vip': False},
     'EURJPY': {'ticker': 'EURJPY=X', 'name': 'EUR/JPY', 'vip': False},
     'EURNOK': {'ticker': 'EURNOK=X', 'name': 'EUR/NOK', 'vip': False},
     'EURNZD': {'ticker': 'EURNZD=X', 'name': 'EUR/NZD', 'vip': False},
@@ -63,6 +75,7 @@ class User(db.Model):
     password = db.Column(db.String(100))
     is_vip = db.Column(db.Boolean, default=False)
     vip_expiry = db.Column(db.DateTime, nullable=True)
+    is_verified = db.Column(db.Boolean, default=False)
 
 class Signal(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -75,6 +88,38 @@ class Signal(db.Model):
     score = db.Column(db.Integer)
     timeframe = db.Column(db.String(20))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class OTP(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(100))
+    code = db.Column(db.String(10))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime)
+
+def send_otp_email(to_email, otp_code):
+    try:
+        msg = Message(
+            subject=f"Gazelle Signal - Your OTP: {otp_code}",
+            recipients=[to_email],
+            body=f"""Hello,
+
+Welcome to Gazelle Signal!
+
+Your verification code is: {otp_code}
+
+This code expires in 10 minutes.
+
+If you didn't request this, ignore this email.
+
+- Gazelle Team
+"""
+        )
+        mail.send(msg)
+        print(f"OTP sent to {to_email}")
+        return True
+    except Exception as e:
+        print(f"MAIL ERROR: {e}")
+        return False
 
 def is_market_open(pair_key):
     if pair_key in ['BTCUSD', 'ETHUSD', 'SOLUSD', 'XAUUSD', 'XAGUSD', 'USOIL', 'UKOIL', 'US30', 'US100', 'SPX500']:
@@ -95,7 +140,6 @@ def generate_all():
     except Exception as e:
         print(f"Download failed: {e}")
         batch = None
-
     count = 0
     for pair_key, info in PAIRS_LIB.items():
         try:
@@ -132,7 +176,6 @@ def generate_all():
                             signal_type = "BUY" if price > ema21 else "SELL"
                             score = 70
                 except Exception as e:
-                    print(f"TA failed {pair_key}: {e}")
                     price = None
             if price is None:
                 if "JPY" in pair_key:
@@ -156,13 +199,14 @@ def generate_all():
             db.session.add(Signal(pair=pair_key, type=signal_type, entry=round(price, 5), sl=round(price * 0.998, 5), tp=round(price * 1.003, 5), is_vip=info['vip'], score=score, timeframe='15M'))
             count += 1
         except Exception as e:
-            print(f"Error {pair_key}: {e}")
             continue
     db.session.commit()
     return count
 
 @app.route('/')
 def dashboard():
+    if 'user_id' not in session:
+        return redirect('/login')
     free_signals = Signal.query.filter_by(is_vip=False).order_by(Signal.pair.asc()).all()
     vip_signals = Signal.query.filter_by(is_vip=True).order_by(Signal.pair.asc()).all()
     user_is_vip = session.get('is_vip', False)
@@ -176,7 +220,7 @@ def dashboard():
         closed_class = "" if open_now else "closed"
         html += f"<div class='card {closed_class}'><span class='badge {badge_class}'>{badge_text}</span><b>{s.pair} {s.type}</b> <span style='float:right;background:#333;padding:2px 8px;border-radius:10px'>{s.score}%</span><br><small>SCALP 15M<br>Entry: {s.entry} | SL: {s.sl} | TP: {s.tp}</small></div>"
     if not user_is_vip:
-        html += f"<div style='background:linear-gradient(90deg,gold,#ffcc00);color:#000;border-radius:12px;padding:15px;margin:15px 0;text-align:center'><b>LOCKED {len(vip_signals)} VIP Signals - $1000/month</b><br><small>Gold, Crypto, Indices, Oil - Real RSI+BB+EMA Strategy</small><br><br><a href='/subscribe' style='background:#000;color:gold;padding:12px 20px;border-radius:8px;text-decoration:none;display:block;font-weight:bold;font-size:18px'>Unlock VIP $1000/month</a></div>"
+        html += f"<div style='background:linear-gradient(90deg,gold,#ffcc00);color:#000;border-radius:12px;padding:15px;margin:15px 0;text-align:center'><b>LOCKED {len(vip_signals)} VIP Signals - $1000/month</b><br><br><a href='/subscribe' style='background:#000;color:gold;padding:12px 20px;border-radius:8px;text-decoration:none;display:block;font-weight:bold'>Unlock VIP $1000/month</a></div>"
     else:
         for s in vip_signals:
             open_now = is_market_open(s.pair)
@@ -188,32 +232,91 @@ def dashboard():
 @app.route('/refresh-library')
 def refresh_library():
     c = generate_all()
-    return f"Refreshed {c} signals - 31 FREE + 10 VIP = 41 total<br><a href='/'>Back</a>"
+    return f"Refreshed {c} signals<br><a href='/'>Back</a>"
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        email = request.form['email']
+        email = request.form['email'].strip().lower()
         pwd = request.form['password']
         if User.query.filter_by(email=email).first():
-            return "Exists <a href='/login'>Login</a>"
-        u = User(email=email, password=pwd)
+            if User.query.filter_by(email=email, is_verified=True).first():
+                return "Email exists <a href='/login'>Login</a>"
+            User.query.filter_by(email=email).delete()
+            db.session.commit()
+        
+        # Create unverified user
+        u = User(email=email, password=pwd, is_verified=False)
         db.session.add(u)
         db.session.commit()
-        session['user_id'] = u.id
-        session['is_vip'] = False
-        return redirect('/')
-    return '<div style="padding:30px;background:#111;color:#fff;min-height:100vh"><h2>Register - Gazelle</h2><form method=post>Email: <input name=email><br><br>Password: <input name=password type=password><br><br><button style="padding:10px 20px;background:gold">Register</button></form><br><a href="/login" style="color:gold">Login</a></div>'
+
+        # Generate OTP
+        otp_code = str(random.randint(100000, 999999))
+        # Delete old OTPs
+        OTP.query.filter_by(email=email).delete()
+        new_otp = OTP(email=email, code=otp_code, expires_at=datetime.utcnow() + timedelta(minutes=10))
+        db.session.add(new_otp)
+        db.session.commit()
+
+        # Send Email via Brevo
+        sent = send_otp_email(email, otp_code)
+        if not sent:
+            return f"Failed to send email. Check Render logs. <br>OTP for testing: {otp_code} <a href='/verify?email={email}'>Go Verify</a>"
+
+        return redirect(f'/verify?email={email}')
+
+    return '<div style="padding:30px;background:#111;color:#fff;min-height:100vh"><h2>Register - Gazelle</h2><form method=post>Email: <input name=email type=email required><br><br>Password: <input name=password type=password required><br><br><button style="padding:10px 20px;background:gold">Send OTP</button></form><br><a href="/login" style="color:gold">Login</a></div>'
+
+@app.route('/verify', methods=['GET', 'POST'])
+def verify():
+    email = request.args.get('email') or request.form.get('email')
+    if not email:
+        return redirect('/register')
+    if request.method == 'POST':
+        user_code = request.form['otp'].strip()
+        stored = OTP.query.filter_by(email=email).order_by(OTP.id.desc()).first()
+        if not stored:
+            return "No OTP found. <a href='/register'>Register again</a>"
+        if datetime.utcnow() > stored.expires_at:
+            return "OTP expired. <a href='/register'>Register again</a>"
+        if stored.code == user_code:
+            user = User.query.filter_by(email=email).first()
+            if user:
+                user.is_verified = True
+                db.session.commit()
+                OTP.query.filter_by(email=email).delete()
+                db.session.commit()
+                session['user_id'] = user.id
+                session['is_vip'] = user.is_vip
+                return redirect('/')
+        else:
+            return f"Wrong OTP. <a href='/verify?email={email}'>Try again</a>"
+
+    return f'''
+    <div style="padding:30px;background:#111;color:#fff;min-height:100vh">
+    <h2>Verify OTP - Gazelle</h2>
+    <p>OTP sent to <b>{email}</b> - Check inbox AND spam (Yahoo/Gmail)</p>
+    <form method=post>
+    <input type=hidden name=email value="{email}">
+    Enter OTP: <input name=otp required><br><br>
+    <button style="padding:10px 20px;background:gold">Verify</button>
+    </form><br>
+    <a href="/register" style="color:gold">Resend OTP - Register again</a>
+    </div>
+    '''
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        u = User.query.filter_by(email=request.form['email'], password=request.form['password']).first()
+        email = request.form['email'].strip().lower()
+        u = User.query.filter_by(email=email, password=request.form['password']).first()
         if u:
+            if not u.is_verified:
+                return f"Email not verified. <a href='/verify?email={email}'>Verify OTP</a>"
             session['user_id'] = u.id
             session['is_vip'] = u.is_vip
             return redirect('/')
-        return "Wrong"
+        return "Wrong email/password"
     return '<div style="padding:30px;background:#111;color:#fff;min-height:100vh"><h2>Login - Gazelle</h2><form method=post>Email: <input name=email><br><br>Password: <input name=password type=password><br><br><button style="padding:10px 20px;background:gold">Login</button></form><br><a href="/register" style="color:gold">Register</a></div>'
 
 @app.route('/logout')
@@ -236,7 +339,7 @@ def subscribe_confirm():
     u.vip_expiry = datetime.utcnow() + timedelta(days=30)
     db.session.commit()
     session['is_vip'] = True
-    return "VIP Activated for 30 days - $1000/month! <a href='/'>Go to Dashboard</a>"
+    return "VIP Activated! <a href='/'>Go to Dashboard</a>"
 
 with app.app_context():
     db.create_all()
