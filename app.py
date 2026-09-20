@@ -120,39 +120,50 @@ def get_live_signal(ticker, pair_name):
         return None
 
 PAIRS_LIB = {
-    # ===== FREE FOREX - MAJORS (7) =====
-    'EURUSD': {'ticker':'EURUSD=X', 'name':'Euro / US Dollar', 'cat':'Forex Major', 'vip':False, 'icon':'€$'},
-    'GBPUSD': {'ticker':'GBPUSD=X', 'name':'British Pound / Dollar', 'cat':'Forex Major', 'vip':False, 'icon':'£$'},
-    'USDJPY': {'ticker':'USDJPY=X', 'name':'Dollar / Japanese Yen', 'cat':'Forex Major', 'vip':False, 'icon':'$¥'},
-    'AUDUSD': {'ticker':'AUDUSD=X', 'name':'Aussie / Dollar', 'cat':'Forex Major', 'vip':False, 'icon':'A$'},
-    'USDCAD': {'ticker':'USDCAD=X', 'name':'Dollar / Canadian', 'cat':'Forex Major', 'vip':False, 'icon':'$C'},
-    'NZDUSD': {'ticker':'NZDUSD=X', 'name':'NZD / Dollar', 'cat':'Forex Major', 'vip':False, 'icon':'N$'},
-    'USDCHF': {'ticker':'USDCHF=X', 'name':'Dollar / Swiss Franc', 'cat':'Forex Major', 'vip':False, 'icon':'$F'},
-
-    # ===== FREE FOREX - MINORS / CROSSES (10) =====
-    'EURGBP': {'ticker':'EURGBP=X', 'name':'Euro / Pound', 'cat':'Forex Cross', 'vip':False, 'icon':'€£'},
-    'EURJPY': {'ticker':'EURJPY=X', 'name':'Euro / Yen', 'cat':'Forex Cross', 'vip':False, 'icon':'€¥'},
-    'GBPJPY': {'ticker':'GBPJPY=X', 'name':'Pound / Yen', 'cat':'Forex Cross', 'vip':False, 'icon':'£¥'},
-    'AUDJPY': {'ticker':'AUDJPY=X', 'name':'Aussie / Yen', 'cat':'Forex Cross', 'vip':False, 'icon':'A¥'},
-    'EURCAD': {'ticker':'EURCAD=X', 'name':'Euro / Canadian', 'cat':'Forex Cross', 'vip':False, 'icon':'€C'},
-    'GBPCAD': {'ticker':'GBPCAD=X', 'name':'Pound / Canadian', 'cat':'Forex Cross', 'vip':False, 'icon':'£C'},
-    'AUDCAD': {'ticker':'AUDCAD=X', 'name':'Aussie / Canadian', 'cat':'Forex Cross', 'vip':False, 'icon':'AC'},
-    'EURAUD': {'ticker':'EURAUD=X', 'name':'Euro / Aussie', 'cat':'Forex Cross', 'vip':False, 'icon':'€A'},
-    'GBPAUD': {'ticker':'GBPAUD=X', 'name':'Pound / Aussie', 'cat':'Forex Cross', 'vip':False, 'icon':'£A'},
-    'CADJPY': {'ticker':'CADJPY=X', 'name':'Canadian / Yen', 'cat':'Forex Cross', 'vip':False, 'icon':'C¥'},
-
-    # ===== VIP - NON FOREX ($1000) =====
-    'XAUUSD': {'ticker':'GC=F', 'name':'Gold / Dollar', 'cat':'Metals', 'vip':True, 'icon':'🥇'},
-    'XAGUSD': {'ticker':'SI=F', 'name':'Silver / Dollar', 'cat':'Metals', 'vip':True, 'icon':'🥈'},
-    'BTCUSD': {'ticker':'BTC-USD', 'name':'Bitcoin / Dollar', 'cat':'Crypto', 'vip':True, 'icon':'₿'},
-    'ETHUSD': {'ticker':'ETH-USD', 'name':'Ethereum / Dollar', 'cat':'Crypto', 'vip':True, 'icon':'Ξ'},
-    'SOLUSD': {'ticker':'SOL-USD', 'name':'Solana / Dollar', 'cat':'Crypto', 'vip':True, 'icon':'◎'},
-    'US30': {'ticker':'^DJI', 'name':'Dow Jones 30', 'cat':'Indices', 'vip':True, 'icon':'🇺🇸'},
-    'NAS100': {'ticker':'^IXIC', 'name':'NASDAQ 100', 'cat':'Indices', 'vip':True, 'icon':'💻'},
-    'SPX500': {'ticker':'^GSPC', 'name':'S&P 500', 'cat':'Indices', 'vip':True, 'icon':'📊'},
-    'USOIL': {'ticker':'CL=F', 'name':'Crude Oil', 'cat':'Energy', 'vip':True, 'icon':'🛢️'},
-}
-
+    # --- FREE FOREX A-Z ---
+    'AUDJPY': {'ticker':'AUDJPY=X', 'name':'AUD/JPY', 'vip': False},
+    'AUDNZD': {'ticker':'AUDNZD=X', 'name':'AUD/NZD', 'vip': False},
+    'AUDUSD': {'ticker':'AUDUSD=X', 'name':'AUD/USD', 'vip': False},
+    'CADJPY': {'ticker':'CADJPY=X', 'name':'CAD/JPY', 'vip': False},
+    'CHFJPY': {'ticker':'CHFJPY=X', 'name':'CHF/JPY', 'vip': False},
+    'EURAUD': {'ticker':'EURAUD=X', 'name':'EUR/AUD', 'vip': False},
+    'EURCAD': {'ticker':'EURCAD=X', 'name':'EUR/CAD', 'vip': False},
+    'EURCHF': {'ticker':'EURCHF=X', 'name':'EUR/CHF', 'vip': False},
+    'EURGBP': {'ticker':'EURGBP=X', 'name':'EUR/GBP', 'vip': False},
+    'EURJPY': {'ticker':'EURJPY=X', 'name':'EUR/JPY', 'vip': False},
+    'EURNOK': {'ticker':'EURNOK=X', 'name':'EUR/NOK', 'vip': False},
+    'EURNZD': {'ticker':'EURNZD=X', 'name':'EUR/NZD', 'vip': False},
+    'EURSEK': {'ticker':'EURSEK=X', 'name':'EUR/SEK', 'vip': False},
+    'EURUSD': {'ticker':'EURUSD=X', 'name':'EUR/USD', 'vip': False},
+    'GBPAUD': {'ticker':'GBPAUD=X', 'name':'GBP/AUD', 'vip': False},
+    'GBPCAD': {'ticker':'GBPCAD=X', 'name':'GBP/CAD', 'vip': False},
+    'GBPCHF': {'ticker':'GBPCHF=X', 'name':'GBP/CHF', 'vip': False},
+    'GBPJPY': {'ticker':'GBPJPY=X', 'name':'GBP/JPY', 'vip': False},
+    'GBPNZD': {'ticker':'GBPNZD=X', 'name':'GBP/NZD', 'vip': False},
+    'GBPUSD': {'ticker':'GBPUSD=X', 'name':'GBP/USD', 'vip': False},
+    'NZDJPY': {'ticker':'NZDJPY=X', 'name':'NZD/JPY', 'vip': False},
+    'NZDUSD': {'ticker':'NZDUSD=X', 'name':'NZD/USD', 'vip': False},
+    'USDCAD': {'ticker':'USDCAD=X', 'name':'USD/CAD', 'vip': False},
+    'USDCHF': {'ticker':'USDCHF=X', 'name':'USD/CHF', 'vip': False},
+    'USDJPY': {'ticker':'USDJPY=X', 'name':'USD/JPY', 'vip': False},
+    'USDMXN': {'ticker':'USDMXN=X', 'name':'USD/MXN', 'vip': False},
+    'USDNOK': {'ticker':'USDNOK=X', 'name':'USD/NOK', 'vip': False},
+    'USDSEK': {'ticker':'USDSEK=X', 'name':'USD/SEK', 'vip': False},
+    'USDSGD': {'ticker':'USDSGD=X', 'name':'USD/SGD', 'vip': False},
+    'USDTRY': {'ticker':'USDTRY=X', 'name':'USD/TRY', 'vip': False},
+    'USDZAR': {'ticker':'USDZAR=X', 'name':'USD/ZAR', 'vip': False},
+    # --- VIP MARKETS A-Z ---
+    'BTCUSD': {'ticker':'BTC-USD', 'name':'Bitcoin', 'vip': True},
+    'ETHUSD': {'ticker':'ETH-USD', 'name':'Ethereum', 'vip': True},
+    'SOLUSD': {'ticker':'SOL-USD', 'name':'Solana', 'vip': True},
+    'SPX500': {'ticker':'^GSPC', 'name':'S&P 500', 'vip': True},
+    'UKOIL': {'ticker':'BZ=F', 'name':'Brent Oil', 'vip': True},
+    'US100': {'ticker':'^NDX', 'name':'Nasdaq', 'vip': True},
+    'US30': {'ticker':'^DJI', 'name':'Dow Jones', 'vip': True},
+    'USOIL': {'ticker':'CL=F', 'name':'WTI Oil', 'vip': True},
+    'XAGUSD': {'ticker':'SI=F', 'name':'Silver', 'vip': True},
+    'XAUUSD': {'ticker':'GC=F', 'name':'Gold', 'vip': True},
+} 
 VIP_PRICE = 1000
 
 def generate_all():
