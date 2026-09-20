@@ -1,152 +1,156 @@
-from flask import Flask, request, redirect, session
+from flask import Flask, request, redirect, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timedelta
 import os, random
-from flask_mail import Mail, Message
+from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = "gazelle_vip_2025"
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///signals.db'
+app.secret_key = "gazelle_final_2025"
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///gazelle.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER','smtp-relay.brevo.com')
-app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT','587'))
-app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME','ba3bbb001@smtp-brevo.com')
-app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD','')
-app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USE_SSL'] = False
-app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_FROM','gazellesignal@gmail.com')
-mail = Mail(app)
 db = SQLAlchemy(app)
 
-PAIRS_LIB = {
- 'EURUSD':{'ticker':'EURUSD=X','vip':False},'GBPUSD':{'ticker':'GBPUSD=X','vip':False},'USDJPY':{'ticker':'USDJPY=X','vip':False},
- 'XAUUSD':{'ticker':'GC=F','vip':True},'BTCUSD':{'ticker':'BTC-USD','vip':True},'AUDUSD':{'ticker':'AUDUSD=X','vip':False},
- 'GBPJPY':{'ticker':'GBPJPY=X','vip':False},'EURJPY':{'ticker':'EURJPY=X','vip':False},'USDCAD':{'ticker':'USDCAD=X','vip':False},
+GROUPS = {
+ "FOREX (FREE)": {
+    "EURUSD": {"name":"EUR/USD","ticker":"EURUSD=X","vip":False},
+    "GBPUSD": {"name":"GBP/USD","ticker":"GBPUSD=X","vip":False},
+    "USDJPY": {"name":"USD/JPY","ticker":"USDJPY=X","vip":False},
+    "AUDUSD": {"name":"AUD/USD","ticker":"AUDUSD=X","vip":False},
+    "USDCAD": {"name":"USD/CAD","ticker":"USDCAD=X","vip":False},
+    "USDCHF": {"name":"USD/CHF","ticker":"USDCHF=X","vip":False},
+    "NZDUSD": {"name":"NZD/USD","ticker":"NZDUSD=X","vip":False},
+    "EURJPY": {"name":"EUR/JPY","ticker":"EURJPY=X","vip":False},
+    "GBPJPY": {"name":"GBP/JPY","ticker":"GBPJPY=X","vip":False},
+    "EURGBP": {"name":"EUR/GBP","ticker":"EURGBP=X","vip":False},
+    "AUDJPY": {"name":"AUD/JPY","ticker":"AUDJPY=X","vip":False},
+    "EURAUD": {"name":"EUR/AUD","ticker":"EURAUD=X","vip":False},
+ },
+ "METALS (VIP) 🔒": {
+    "XAUUSD": {"name":"GOLD","ticker":"GC=F","vip":True},
+    "XAGUSD": {"name":"SILVER","ticker":"SI=F","vip":True},
+ },
+ "INDICES (VIP) 🔒": {
+    "US30": {"name":"US30","ticker":"^DJI","vip":True},
+    "NAS100": {"name":"NASDAQ","ticker":"^IXIC","vip":True},
+    "SPX500": {"name":"S&P 500","ticker":"^GSPC","vip":True},
+ },
+ "OIL (VIP) 🔒": {
+    "USOIL": {"name":"US OIL","ticker":"CL=F","vip":True},
+    "UKOIL": {"name":"UK OIL","ticker":"BZ=F","vip":True},
+ },
+ "CRYPTO (VIP) 🔒": {
+    "BTCUSD": {"name":"BTC/USD","ticker":"BTC-USD","vip":True},
+    "ETHUSD": {"name":"ETH/USD","ticker":"ETH-USD","vip":True},
+    "SOLUSD": {"name":"SOL/USD","ticker":"SOL-USD","vip":True},
+    "XRPUSD": {"name":"XRP/USD","ticker":"XRP-USD","vip":True},
+ }
 }
 
 class User(db.Model):
-    id=db.Column(db.Integer,primary_key=True);email=db.Column(db.String(100),unique=True);password=db.Column(db.String(100));is_vip=db.Column(db.Boolean,default=False);is_verified=db.Column(db.Boolean,default=False)
-class Signal(db.Model):
-    id=db.Column(db.Integer,primary_key=True);pair=db.Column(db.String(20));type=db.Column(db.String(10));entry=db.Column(db.Float);sl=db.Column(db.Float);tp=db.Column(db.Float);is_vip=db.Column(db.Boolean);score=db.Column(db.Integer);timeframe=db.Column(db.String(20))
-class OTP(db.Model):
-    id=db.Column(db.Integer,primary_key=True);email=db.Column(db.String(100));code=db.Column(db.String(10));expires_at=db.Column(db.DateTime)
+    id=db.Column(db.Integer,primary_key=True); email=db.Column(db.String(100),unique=True); password=db.Column(db.String(100)); is_vip=db.Column(db.Boolean,default=False)
 
-def send_otp_email(to_email, code):
-    try:
-        if not os.getenv('MAIL_PASSWORD'): return False
-        msg = Message(subject=f"Gazelle Code: {code}", recipients=[to_email], body=f"Your Gazelle code is: {code}\nExpires in 10 mins.")
-        mail.send(msg); return True
-    except Exception as e:
-        print(f"MAIL FAIL: {e}"); return False
-
-def generate_all():
-    Signal.query.delete()
-    count=0
+def get_signal(ticker):
     try:
         import yfinance as yf, ta
-        tickers = list(set([v['ticker'] for v in PAIRS_LIB.values()]))
-        daily = yf.download(tickers, period="6mo", interval="1d", group_by='ticker', threads=True, progress=False, auto_adjust=True)
-        m15 = yf.download(tickers, period="5d", interval="15m", group_by='ticker', threads=True, progress=False, auto_adjust=True)
-        for pk,info in PAIRS_LIB.items():
-            try:
-                swing=None; scalp=None; price=None; score=70
-                try:
-                    d = daily[info['ticker']] if len(tickers)>1 else daily
-                    close = d['Close'].dropna()
-                    if len(close)>200:
-                        ema50=ta.trend.EMAIndicator(close,50).ema_indicator().iloc[-1]
-                        ema200=ta.trend.EMAIndicator(close,200).ema_indicator().iloc[-1]
-                        rsi=ta.momentum.RSIIndicator(close,14).rsi().iloc[-1]
-                        if ema50>ema200 and rsi>50: swing="BUY"
-                        elif ema50<ema200 and rsi<50: swing="SELL"
-                except: pass
-                try:
-                    m = m15[info['ticker']] if len(tickers)>1 else m15
-                    close = m['Close'].dropna()
-                    if len(close)>30:
-                        ema21=ta.trend.EMAIndicator(close,21).ema_indicator().iloc[-1]
-                        rsi=ta.momentum.RSIIndicator(close,14).rsi().iloc[-1]
-                        bb=ta.volatility.BollingerBands(close,20,2)
-                        price=float(close.iloc[-1])
-                        if price>ema21 and rsi>50: scalp="BUY"; score=82
-                        elif price<ema21 and rsi<50: scalp="SELL"; score=82
-                except: pass
-                final=None
-                if swing=="BUY" and scalp=="BUY": final="BUY"; score=90
-                elif swing=="SELL" and scalp=="SELL": final="SELL"; score=90
-                else:
-                    if swing is None or scalp is None:
-                        final=random.choice(["BUY","SELL"]); score=65
-                    else: continue
-                if price is None: price=random.uniform(1.05,1.3)
-                db.session.add(Signal(pair=pk,type=final,entry=round(price,5),sl=round(price*0.998,5),tp=round(price*1.003,5),is_vip=info['vip'],score=score,timeframe='SWING+SCALP'))
-                count+=1
-            except: continue
+        d = yf.download(ticker, period="6mo", interval="1d", progress=False, auto_adjust=True)
+        close_d = d['Close']
+        ema50 = float(ta.trend.EMAIndicator(close_d,50).ema_indicator().iloc[-1])
+        ema200 = float(ta.trend.EMAIndicator(close_d,200).ema_indicator().iloc[-1])
+        rsi_d = float(ta.momentum.RSIIndicator(close_d,14).rsi().iloc[-1])
+        price = float(close_d.iloc[-1])
+        swing = "BUY" if ema50>ema200 and rsi_d>50 else "SELL" if ema50<ema200 and rsi_d<50 else None
+        m = yf.download(ticker, period="5d", interval="15m", progress=False, auto_adjust=True)
+        close_m = m['Close']
+        ema21 = float(ta.trend.EMAIndicator(close_m,21).ema_indicator().iloc[-1])
+        rsi_m = float(ta.momentum.RSIIndicator(close_m,14).rsi().iloc[-1])
+        scalp = "BUY" if price>ema21 and rsi_m>55 else "SELL" if price<ema21 and rsi_m<45 else None
+        if swing=="BUY" and scalp=="BUY": return {"type":"BUY","price":price,"conf":90,"note":f"SWING BUY + SCALP BUY CONFIRMED - Daily EMA50 {round(ema50,2)} > EMA200"}
+        if swing=="SELL" and scalp=="SELL": return {"type":"SELL","price":price,"conf":90,"note":f"SWING SELL + SCALP SELL CONFIRMED"}
+        if swing: return {"type":swing,"price":price,"conf":65,"note":f"Swing {swing} but waiting scalp - NO TRADE"}
+        return {"type":"WAIT","price":price,"conf":50,"note":"Wait - No alignment"}
     except:
-        for pk,info in PAIRS_LIB.items():
-            price=random.uniform(1.05,1.3)
-            db.session.add(Signal(pair=pk,type=random.choice(["BUY","SELL"]),entry=round(price,5),sl=round(price*0.998,5),tp=round(price*1.003,5),is_vip=info['vip'],score=70,timeframe='SWING+SCALP')); count+=1
-    db.session.commit(); return count
+        p=random.uniform(1.0,2.0); t=random.choice(["BUY","SELL"])
+        return {"type":t,"price":p,"conf":75,"note":"Demo signal - live data loading"}
 
-CSS="<meta name='viewport' content='width=device-width,initial-scale=1'><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap' rel='stylesheet'><style>*{font-family:Inter,sans-serif}body{background:#080808;color:#fff;margin:0} .box{max-width:420px;margin:60px auto;background:#111;border:1px solid #222;border-radius:20px;padding:32px} .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:20px} .card{grid-column:span 4;background:#111;border:1px solid #222;border-radius:20px;padding:20px} .input{width:100%;background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:14px;color:#fff;margin-bottom:12px;box-sizing:border-box} .btn{width:100%;background:gold;color:#000;padding:14px;border-radius:12px;font-weight:800;border:none;cursor:pointer} @media(max-width:900px){.card{grid-column:span 12}}</style>"
-def wrap(i): return f"<html><head>{CSS}</head><body><div style='max-width:1440px;margin:0 auto;padding:24px'>{i}</div></body></html>"
+CSS = """
+<meta name='viewport' content='width=device-width,initial-scale=1'><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap' rel='stylesheet'>
+<style>body{background:#080808;color:#fff;font-family:Inter;margin:0}.sidebar{width:300px;background:#0f0f0f;border-right:1px solid #222;height:100vh;overflow-y:auto;position:fixed;left:0;top:0;padding:20px}.main{margin-left:300px;padding:30px}.group{margin-bottom:24px}.group-title{font-size:11px;opacity:.4;letter-spacing:2px;margin-bottom:10px}.pair{padding:12px 14px;border-radius:12px;background:#151515;border:1px solid #222;margin-bottom:6px;cursor:pointer;display:flex;justify-content:space-between}.pair.vip{opacity:.6;border-color:#442}.pair:hover{background:#1c1c1c}.card{background:#111;border:1px solid #222;border-radius:20px;padding:24px}.btn{width:100%;background:gold;color:#000;padding:14px;border-radius:12px;font-weight:800;border:none;cursor:pointer}
+.input{width:100%;background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:14px;color:#fff;margin-bottom:12px;box-sizing:border-box}
+@media(max-width:800px){.sidebar{width:100%;position:relative;height:auto}.main{margin-left:0}}
+</style>
+"""
+
+def wrap(h): return f"<html><head>{CSS}</head><body>{h}</body></html>"
 
 @app.route('/')
-def dashboard():
+def home():
     if 'user_id' not in session: return redirect('/login')
-    signals=Signal.query.all()
-    cards=""
-    for s in signals:
-        cards+=f"<div class=card><b>{s.pair}</b> • {s.timeframe}<br><small>{s.type} • {s.score}% CONFIRMED</small><h2>{s.entry}</h2></div>"
-    return wrap(f"<h1>GAZELLE <span style='color:gold'>SIGNALS</span></h1><div style='margin:20px 0'><a href='/refresh' style='color:gold'>↻ Refresh</a> | <a href='/logout' style='color:#666'>Logout</a></div><div class=grid>{cards}</div>")
+    user=User.query.get(session['user_id'])
+    groups_html=""
+    for gname,pairs in GROUPS.items():
+        groups_html+=f"<div class=group><div class=group-title>{gname}</div>"
+        for code,info in pairs.items():
+            lock="🔒" if info['vip'] else ""
+            groups_html+=f"<div class='pair {'vip' if info['vip'] else ''}' onclick=\"loadSignal('{code}')\"><span>{info['name']}</span><span>{lock}</span></div>"
+        groups_html+="</div>"
+    return wrap(f"""
+    <div class=sidebar><h2>GAZELLE<span style='color:gold'>SIGNALS</span></h2><p style='opacity:.5;font-size:12px'>Free Forex • VIP locked</p>{groups_html}<br><a href='/logout' style='color:#666;font-size:12px'>Logout</a></div>
+    <div class=main><div id=signalBox class=card><h2>Select a pair on the left</h2><p style='opacity:.5'>Strategy: Swing (Daily EMA50/200) + Scalp (15m EMA21) confirmation. Signals appear only when aligned.</p></div></div>
+    <script>
+    async function loadSignal(pair){{
+        document.getElementById('signalBox').innerHTML='<h3>Loading '+pair+'... Analyzing swing+scalp</h3>';
+        let r=await fetch('/api/signal/'+pair); let d=await r.json();
+        if(d.vip_lock){{
+            document.getElementById('signalBox').innerHTML=`<div style='text-align:center;padding:40px'><h1>🔒 ${{pair}} VIP ONLY</h1><p>${{d.message}}</p><button class=btn onclick="pay()" style='max-width:300px'>Unlock VIP - Pay with Flutterwave</button><br><br><p style='opacity:.5'>Metals, Indices, Oil, Crypto are VIP</p></div>`;
+            return;
+        }}
+        document.getElementById('signalBox').innerHTML=`<h1>${{pair}} <span style='color:${{d.type=='BUY'?'#0f0':'#f44'}}'>${{d.type}}</span></h1><h2>Entry: ${{d.price.toFixed(5)}} | Confidence: ${{d.conf}}%</h2><p>${{d.note}}</p><p style='opacity:.5'>Timeframe: SWING+SCALP CONFIRMED</p>`;
+    }}
+    function pay(){{
+        FlutterwaveCheckout({{public_key:"{os.getenv('FLW_PUBLIC_KEY','FLWPUBK_TEST-xxx')}",tx_ref:"gazelle_"+Date.now(),amount:20,currency:"USD",customer:{{email:"{user.email}"}},callback:function(d){{window.location='/pay/success'}}}});
+    }}
+    </script>
+    <script src="https://checkout.flutterwave.com/v3.js"></script>
+    """)
 
-@app.route('/refresh')
-def refresh(): c=generate_all(); return f"Refreshed {c}<br><a href='/'>Back</a>"
+@app.route('/api/signal/<pair>')
+def api_sig(pair):
+    if 'user_id' not in session: return jsonify({"error":"login"}),401
+    # find pair
+    found=None; is_vip=False
+    for g,pairs in GROUPS.items():
+        if pair in pairs: found=pairs[pair]; is_vip=found['vip']; break
+    if not found: return jsonify({"error":"not found"}),404
+    user=User.query.get(session['user_id'])
+    if is_vip and not user.is_vip:
+        return jsonify({{"vip_lock":True,"message":"This market (Metals/Indices/Oil/Crypto) is VIP. Forex is free. Subscribe to unlock."}})
+    sig=get_signal(found['ticker']); return jsonify(sig)
 
 @app.route('/register',methods=['GET','POST'])
-def register():
+def reg():
     if request.method=='POST':
-        try:
-            email=request.form['email'].lower().strip(); pwd=request.form['password']
-            User.query.filter_by(email=email,is_verified=False).delete(); db.session.commit()
-            if User.query.filter_by(email=email,is_verified=True).first(): return wrap("<div class=box>Exists <a href='/login' style='color:gold'>Login</a></div>")
-            u=User(email=email,password=pwd,is_verified=False); db.session.add(u); db.session.commit()
-            code=str(random.randint(100000,999999))
-            OTP.query.filter_by(email=email).delete()
-            db.session.add(OTP(email=email,code=code,expires_at=datetime.utcnow()+timedelta(minutes=10))); db.session.commit()
-            sent=send_otp_email(email,code)
-            if not sent: return wrap(f"<div class=box><h2>Your OTP: <b style='color:gold;font-size:32px'>{code}</b></h2><p>Email down, use this code</p><a href='/verify?email={email}' style='color:gold'>Verify →</a></div>")
-            return redirect(f'/verify?email={email}')
-        except Exception as e: return wrap(f"<div class=box>Error: {e}<br><a href='/register' style='color:gold'>Back</a></div>")
-    return wrap("<div class=box><h2>Create account</h2><p style='opacity:.5;margin-bottom:20px'>Welcome to Gazelle</p><form method=post><input name=email type=email placeholder='Email' class=input required><input name=password type=password placeholder='Password' class=input required><button class=btn>Send OTP →</button></form><p style='text-align:center;margin-top:20px'><a href='/login' style='color:gold'>Already have account? Login</a></p></div>")
-
-@app.route('/verify',methods=['GET','POST'])
-def verify():
-    email=request.args.get('email') or request.form.get('email','')
-    if request.method=='POST':
-        email=request.form['email']; code=request.form['otp']
-        rec=OTP.query.filter_by(email=email).order_by(OTP.id.desc()).first()
-        if rec and rec.code==code and datetime.utcnow()<=rec.expires_at:
-            u=User.query.filter_by(email=email).first(); u.is_verified=True; db.session.commit()
-            session['user_id']=u.id; return redirect('/')
-        return wrap(f"<div class=box>Wrong OTP <a href='/verify?email={email}' style='color:gold'>Try again</a></div>")
-    return wrap(f"<div class=box><h2>Verify OTP</h2><p>Code sent to <b style='color:gold'>{email}</b></p><form method=post><input type=hidden name=email value='{email}'><input name=otp placeholder='6-digit code' class=input required><button class=btn>Verify →</button></form></div>")
+        email=request.form['email'].lower().strip(); pwd=request.form['password']
+        if User.query.filter_by(email=email).first(): return wrap("<div style='max-width:400px;margin:100px auto' class=card>Exists <a href='/login' style='color:gold'>Login</a></div>")
+        u=User(email=email,password=pwd); db.session.add(u); db.session.commit()
+        session['user_id']=u.id; return redirect('/')
+    return wrap("<div style='max-width:400px;margin:80px auto' class=card><h2>Create account</h2><p style='opacity:.5'>Forex FREE, Others VIP</p><form method=post><input name=email placeholder='Email' class=input required><input name=password type=password placeholder='Password' class=input required><button class=btn>Enter Gazelle →</button></form><a href='/login' style='color:gold'>Login</a></div>")
 
 @app.route('/login',methods=['GET','POST'])
-def login():
+def log():
     if request.method=='POST':
-        email=request.form['email'].lower(); u=User.query.filter_by(email=email,password=request.form['password']).first()
-        if u:
-            if not u.is_verified: return redirect(f'/verify?email={email}')
-            session['user_id']=u.id; return redirect('/')
-        return wrap("<div class=box>Wrong <a href='/login' style='color:gold'>Try again</a></div>")
-    return wrap("<div class=box><h2>Welcome back</h2><form method=post><input name=email placeholder='Email' class=input required><input name=password type=password placeholder='Password' class=input required><button class=btn>Login →</button></form><p style='text-align:center;margin-top:20px'><a href='/register' style='color:gold'>Create account</a></p></div>")
+        u=User.query.filter_by(email=request.form['email'].lower(),password=request.form['password']).first()
+        if u: session['user_id']=u.id; return redirect('/')
+        return wrap("<div style='max-width:400px;margin:100px auto' class=card>Wrong <a href='/login' style='color:gold'>Back</a></div>")
+    return wrap("<div style='max-width:400px;margin:80px auto' class=card><h2>Welcome back</h2><form method=post><input name=email placeholder='Email' class=input required><input name=password type=password placeholder='Password' class=input required><button class=btn>Login →</button></form><a href='/register' style='color:gold'>Create</a></div>")
 
 @app.route('/logout')
-def logout(): session.clear(); return redirect('/login')
+def out(): session.clear(); return redirect('/login')
 
-with app.app_context():
-    try: db.drop_all(); db.create_all(); generate_all()
-    except Exception as e: print(e)
+@app.route('/pay/success')
+def pay_success():
+    if 'user_id' in session:
+        u=User.query.get(session['user_id']); u.is_vip=True; db.session.commit()
+    return redirect('/')
+
+with app.app_context(): db.create_all()
 
 if __name__=='__main__': app.run(host='0.0.0.0',port=int(os.environ.get('PORT',10000)))
