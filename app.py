@@ -1,6 +1,5 @@
-import os, requests, hashlib, hmac
+import os, requests
 import pandas as pd
-import pandas_ta as ta
 from flask import Flask, request, jsonify, session, redirect
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
@@ -29,26 +28,39 @@ with app.app_context():
 
 # === CONFIG ===
 FLW_PAY_LINK = "https://flutterwave.com/pay/3sjsabbo3lqx"
-FLW_SECRET_KEY = os.getenv('FLW_SECRET_KEY', '') # Put your FLW SECRET KEY in Render env
-FLW_SECRET_HASH = os.getenv('FLW_SECRET_HASH', 'gazelle123') # You set this in Flutterwave dashboard
+FLW_SECRET_HASH = os.getenv('FLW_SECRET_HASH', 'gazelle123')
+
+def calc_rsi(prices, period=14):
+    try:
+        s = pd.Series(prices)
+        delta = s.diff()
+        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
+        loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return float(rsi.iloc[-1])
+    except:
+        return 50.0
 
 def get_signal(symbol):
     try:
         url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=5m&limit=100"
         r = requests.get(url, timeout=10).json()
-        df = pd.DataFrame(r, columns=['t','o','h','l','c','v','a','b','c','d','e','f'])
-        df['c'] = df['c'].astype(float)
-        df['rsi'] = ta.rsi(df['c'], length=14)
-        ema_fast = ta.ema(df['c'], length=9)
-        ema_slow = ta.ema(df['c'], length=21)
-        last = df.iloc[-1]
-        price = float(last['c'])
-        buy = last['rsi'] < 35 and ema_fast.iloc[-1] > ema_slow.iloc[-1]
-        sell = last['rsi'] > 65 and ema_fast.iloc[-1] < ema_slow.iloc[-1]
-        if buy: return {"type": "BUY", "price": price, "conf": 88}
-        if sell: return {"type": "SELL", "price": price, "conf": 88}
+        closes = [float(x[4]) for x in r]
+        price = closes[-1]
+        rsi = calc_rsi(closes, 14)
+        ema9 = pd.Series(closes).ewm(span=9, adjust=False).mean().iloc[-1]
+        ema21 = pd.Series(closes).ewm(span=21, adjust=False).mean().iloc[-1]
+
+        buy = rsi < 35 and ema9 > ema21
+        sell = rsi > 65 and ema9 < ema21
+
+        if buy:
+            return {"type": "BUY", "price": price, "conf": 88}
+        if sell:
+            return {"type": "SELL", "price": price, "conf": 88}
         return {"type": "WAIT", "price": price, "conf": 60}
-    except:
+    except Exception as e:
         return {"type": "WAIT", "price": 0, "conf": 0}
 
 def wrap(html):
@@ -72,16 +84,16 @@ def home():
         async function loadPairs(){{
             let r=await fetch('/api/pairs'); let data=await r.json();
             let h=''; data.forEach(p=>{{
-                let lock = {str(vip).lower()} ? '' : (p.vip ? '🔒' : '');
+                let lock = {str(vip).lower()}? '' : (p.vip? '🔒' : '');
                 h+=`<div onclick="pick('${{p.symbol}}',${{p.vip}})" style='padding:12px;border-bottom:1px solid #222;cursor:pointer;display:flex;justify-content:space-between'><span>${{p.name}} ${{lock}}</span><span style='color:#888'>${{p.symbol}}</span></div>`
             }});
             document.getElementById('pairs').innerHTML=h;
         }}
-        async function pick(sym,isVip){{ if(isVip && !{str(vip).lower()}){{ window.location='/pay'; return; }} cur=sym; getSig(); }}
+        async function pick(sym,isVip){{ if(isVip &&!{str(vip).lower()}){{ window.location='/pay'; return; }} cur=sym; getSig(); }}
         async function getSig(){{
             let r=await fetch('/api/signal?symbol='+cur); let d=await r.json();
             if(d.type=='LOCKED'){{ document.getElementById('signal').innerHTML="<h3>🔒 VIP Only</h3><a href='/pay'><button class=btn>Unlock VIP</button></a>"; return; }}
-            let col = d.type=='BUY' ? '#00ff88' : d.type=='SELL' ? '#ff4444' : '#888';
+            let col = d.type=='BUY'? '#00ff88' : d.type=='SELL'? '#ff4444' : '#888';
             document.getElementById('signal').innerHTML=`<h2 style='color:${{col}}'>${{d.type}} - ${{cur}}</h2><p>Price: ${{d.price}}</p><p>Conf: ${{d.conf}}%</p>`;
         }}
         loadPairs(); setInterval(getSig, 10000);
@@ -128,7 +140,6 @@ def log():
 @app.route('/logout')
 def logout(): session.clear(); return redirect('/login')
 
-# === PAYMENT ===
 @app.route('/pay')
 def pay():
     u=current_user()
@@ -139,41 +150,29 @@ def pay():
 def pay_success():
     u=current_user()
     if not u: return redirect('/login')
-    # This page is just for UI, real VIP comes from webhook below
-    # But we keep it friendly: if user just paid, tell them to wait 5 sec
-    return wrap(f"<div class=card style='max-width:400px;margin:100px auto;text-align:center'><h2>⏳ Verifying payment...</h2><p>{u.email}</p><p>We are confirming with Flutterwave. If verified, VIP will unlock in seconds.</p><p>If not unlocked, contact support.</p><a href='/'><button class=btn>Check VIP Status →</button></a></div>")
+    return wrap(f"<div class=card style='max-width:400px;margin:100px auto;text-align:center'><h2>⏳ Verifying payment...</h2><p>{u.email}</p><p>Confirming with Flutterwave. VIP unlocks automatically.</p><a href='/'><button class=btn>Check Status →</button></a></div>")
 
-# === SECURE WEBHOOK - REAL VIP UNLOCK ===
 @app.route('/webhook/flutterwave', methods=['POST'])
 def flw_webhook():
-    # Verify signature from Flutterwave
     signature = request.headers.get('verif-hash')
-    if signature != FLW_SECRET_HASH:
+    if signature!= FLW_SECRET_HASH:
         return jsonify({"status":"invalid hash"}), 401
-    
     data = request.json
-    # Flutterwave sends: data.status, data.customer.email
     try:
-        if data.get('data', {}).get('status') == 'successful' or data.get('status') == 'successful':
-            # Get email
-            payload = data.get('data', data)
-            email = payload.get('customer', {}).get('email') or payload.get('customer_email')
-            if not email:
-                # Try top level
-                email = data.get('customer', {}).get('email')
-            
+        payload = data.get('data', data)
+        status_ok = payload.get('status') == 'successful' or data.get('status') == 'successful'
+        if status_ok:
+            email = payload.get('customer', {}).get('email') or payload.get('customer_email') or data.get('customer', {}).get('email')
             if email:
                 email = email.lower().strip()
                 user = User.query.filter_by(email=email).first()
                 if user:
                     user.is_vip = True
-                    user.tx_ref = str(payload.get('id') or payload.get('tx_ref'))
+                    user.tx_ref = str(payload.get('id') or payload.get('tx_ref') or '')
                     db.session.commit()
-                    print(f"VIP ACTIVATED for {email}")
                     return jsonify({"status":"VIP activated"}), 200
         return jsonify({"status":"ignored"}), 200
     except Exception as e:
-        print(f"Webhook error: {e}")
         return jsonify({"error":str(e)}), 500
 
 if __name__ == '__main__':
