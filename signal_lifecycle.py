@@ -1,94 +1,3 @@
-"""Persistent signal lifecycle for the Gazelle Signals Flask app."""
-from datetime import datetime, timezone
-
-
-db = None
-Signal = None
-
-
-def configure(database):
-    """Bind this module to the application's existing SQLAlchemy instance."""
-    global db, Signal
-    db = database
-
-    class _Signal(db.Model):
-        __tablename__ = "signals"
-        id = db.Column(db.Integer, primary_key=True)
-        symbol = db.Column(db.String(40), nullable=False, index=True)
-        direction = db.Column(db.String(4), nullable=False)
-        entry = db.Column(db.Float, nullable=False)
-        tp1 = db.Column(db.Float, nullable=False)
-        tp2 = db.Column(db.Float, nullable=False)
-        stop_loss = db.Column(db.Float, nullable=False)
-        status = db.Column(db.String(20), nullable=False, default="ACTIVE", index=True)
-        opened_at = db.Column(db.DateTime, nullable=False, default=utcnow)
-        closed_at = db.Column(db.DateTime)
-        close_price = db.Column(db.Float)
-
-        __table_args__ = (db.UniqueConstraint("symbol", "status", name="uq_active_signal_symbol_status"),)
-
-    Signal = _Signal
-    return Signal
-
-
-def utcnow():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def active_signal(symbol):
-    return Signal.query.filter_by(symbol=symbol, status="ACTIVE").order_by(Signal.opened_at.desc()).first()
-
-
-def create_signal(symbol, values):
-    signal = Signal(symbol=symbol, direction=values["type"], entry=values["entry"], tp1=values["tp"], tp2=values["tp2"], stop_loss=values["sl"], status="ACTIVE")
-    db.session.add(signal)
-    db.session.commit()
-    return signal
-
-
-def outcome(signal, price):
-    if signal.direction == "BUY":
-        if price <= signal.stop_loss:
-            return "SL_HIT"
-        if price >= signal.tp2:
-            return "TP2_HIT"
-        if price >= signal.tp1:
-            return "TP1_HIT"
-    else:
-        if price >= signal.stop_loss:
-            return "SL_HIT"
-        if price <= signal.tp2:
-            return "TP2_HIT"
-        if price <= signal.tp1:
-            return "TP1_HIT"
-    return None
-
-
-def refresh_signal(symbol, price, generator):
-    if Signal is None:
-        raise RuntimeError("signal_lifecycle.configure(db) must be called first")
-    signal = active_signal(symbol)
-    result = outcome(signal, price) if signal else None
-    if result:
-        signal.status = result
-        signal.close_price = price
-        signal.closed_at = utcnow()
-        db.session.commit()
-        signal = None
-    if signal is None:
-        signal = create_signal(symbol, generator())
-    return signal
-
-
-def signal_history(symbol=None, limit=100):
-    query = Signal.query.filter(Signal.status != "ACTIVE")
-    if symbol:
-        query = query.filter_by(symbol=symbol)
-    return query.order_by(Signal.closed_at.desc()).limit(limit).all()
-
-
-def as_dict(signal):
-    return {"id": signal.id, "pair": signal.symbol, "type": signal.direction, "entry": signal.entry, "tp": signal.tp1, "tp2": signal.tp2, "sl": signal.stop_loss, "status": signal.status, "opened_at": signal.opened_at.isoformat(), "closed_at": signal.closed_at.isoformat() if signal.closed_at else None, "close_price": signal.close_price}
 import os
 import requests
 import pandas as pd
@@ -96,16 +5,31 @@ import urllib.parse
 from datetime import datetime
 from flask import Flask, request, jsonify, session, redirect
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from signal_lifecycle import configure, refresh_signal, signal_history, as_dict
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY")
-db_url = os.getenv("DATABASE_URL", "sqlite:///gazelle.db")
+
+is_production = os.getenv("RENDER") == "true" or os.getenv("FLASK_ENV") == "production"
+secret_key = os.getenv("SECRET_KEY")
+if not secret_key and is_production:
+    raise RuntimeError("SECRET_KEY is missing. Set it in your Render environment variables.")
+app.secret_key = secret_key or "dev-secret-key-change-me"
+app.config["SESSION_COOKIE_SECURE"] = is_production
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+db_url = os.getenv("DATABASE_URL")
+if not db_url:
+    if is_production:
+        raise RuntimeError("DATABASE_URL is missing. Set it in your Render environment variables.")
+    db_url = "sqlite:///gazelle.db"
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
 db = SQLAlchemy(app)
 configure(db)
 
@@ -113,12 +37,25 @@ configure(db)
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(120), nullable=False)
+    password = db.Column(db.String(255), nullable=False)
     is_vip = db.Column(db.Boolean, default=False)
 
 
 with app.app_context():
     db.create_all()
+
+
+def hash_password(password):
+    return generate_password_hash(password)
+
+
+def verify_password(password, stored_hash):
+    if not stored_hash:
+        return False
+    if stored_hash.startswith("pbkdf2:") or stored_hash.startswith("scrypt:") or stored_hash.startswith("argon2"):
+        return check_password_hash(stored_hash, password)
+    return stored_hash == password
+
 
 FLW_PAY_LINK = "https://flutterwave.com/pay/3sjsabbo3lqx"
 FLW_SECRET_HASH = os.getenv("FLW_SECRET_HASH")
@@ -169,6 +106,8 @@ def calc_rsi_from_binance(bsym="BTCUSDT"):
             delta = series.diff()
             gain = delta.where(delta > 0, 0).rolling(14).mean()
             loss = -delta.where(delta < 0, 0).rolling(14).mean()
+            if (loss == 0).all():
+                return closes[-1], 50.0, float(series.ewm(span=9, adjust=False).mean().iloc[-1]), float(series.ewm(span=21, adjust=False).mean().iloc[-1]), closes
             rsi = 100 - (100 / (1 + gain / loss))
             return closes[-1], float(rsi.iloc[-1]), float(series.ewm(span=9, adjust=False).mean().iloc[-1]), float(series.ewm(span=21, adjust=False).mean().iloc[-1]), closes
     except (requests.RequestException, ValueError, TypeError, IndexError):
@@ -181,6 +120,8 @@ def get_signal(symbol):
     if real_price is None:
         return None
     _, rsi, ema9, ema21, closes = calc_rsi_from_binance("BTCUSDT")
+    if not closes:
+        return None
     sig = "BUY" if rsi < 40 and ema9 > ema21 else "SELL" if rsi > 60 and ema9 < ema21 else "BUY" if len(closes) < 2 or closes[-1] > closes[-2] else "SELL"
     if real_price < 10:
         distance = 0.002
@@ -193,7 +134,7 @@ def get_signal(symbol):
         tp2 = real_price * (1 + pct * 2.5) if sig == "BUY" else real_price * (1 - pct * 2.5)
         sl = real_price * (1 - pct * 0.7) if sig == "BUY" else real_price * (1 + pct * 0.7)
     precision = 5 if real_price < 10 else 2
-    return {"pair": symbol, "type": sig, "entry": round(real_price, precision), "tp": round(tp1, precision), "tp2": round(tp2, precision), "sl": round(sl, precision), "conf": 75, "timeframe": "SWING+SCALP CONFIRMED", "live": True, "price": real_price}
+    return {"pair": symbol, "type": sig, "entry": round(real_price, precision), "tp": round(tp1, precision), "tp2": round(tp2, precision), "sl": round(sl, precision), "conf": 75, "timeframe": "SWING", "live": True, "price": real_price}
 
 
 def current_user():
@@ -205,25 +146,19 @@ def signal_for(symbol):
     price = get_live_price(symbol)
     if price is None:
         return None
-    current = refresh_signal(symbol, price, lambda: get_signal(symbol))
+    signal = get_signal(symbol)
+    if signal is None:
+        return None
+    current = refresh_signal(symbol, price, lambda: signal)
     return as_dict(current)
 
 
-PAIRS_LIBRARY = {
-    "FOREX (FREE)": ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "NZD/USD", "USD/CAD", "EUR/GBP", "EUR/JPY", "GBP/JPY"],
-    "METALS (VIP) 🔒": ["XAU/USD - GOLD", "XAG/USD - SILVER"],
-    "OILS (VIP) 🔒": ["UK OIL", "US OIL"],
-    "CRYPTO (VIP) 🔒": ["BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD", "BNB/USD", "DOGE/USD"],
-    "INDICES (VIP) 🔒": ["US30", "NAS100", "SPX500", "GER40"],
-}
-TV_MAP = {
-    "EUR/USD": "FX:EURUSD", "GBP/USD": "FX:GBPUSD", "USD/JPY": "FX:USDJPY", "USD/CHF": "FX:USDCHF", "AUD/USD": "FX:AUDUSD", "NZD/USD": "FX:NZDUSD", "USD/CAD": "FX:USDCAD", "EUR/GBP": "FX:EURGBP", "EUR/JPY": "FX:EURJPY", "GBP/JPY": "FX:GBPJPY",
-    "XAU/USD - GOLD": "OANDA:XAUUSD", "XAG/USD - SILVER": "OANDA:XAGUSD", "BTC/USD": "BINANCE:BTCUSDT", "ETH/USD": "BINANCE:ETHUSDT", "SOL/USD": "BINANCE:SOLUSDT", "XRP/USD": "BINANCE:XRPUSDT", "BNB/USD": "BINANCE:BNBUSDT", "DOGE/USD": "BINANCE:DOGEUSDT",
-}
+PAIRS_LIBRARY = {"FOREX (FREE)": ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "NZD/USD", "USD/CAD", "EUR/GBP", "EUR/JPY", "GBP/JPY"], "METALS (VIP) 🔒": ["XAU/USD - GOLD", "XAG/USD - SILVER"], "OILS (VIP) 🔒": ["UK OIL", "US OIL"], "CRYPTO (VIP) 🔒": ["BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD", "BNB/USD", "DOGE/USD"], "INDICES (VIP) 🔒": ["US30", "NAS100", "SPX500", "GER40"]}
+TV_MAP = {"EUR/USD": "FX:EURUSD", "GBP/USD": "FX:GBPUSD", "USD/JPY": "FX:USDJPY", "USD/CHF": "FX:USDCHF", "AUD/USD": "FX:AUDUSD", "NZD/USD": "FX:NZDUSD", "USD/CAD": "FX:USDCAD", "EUR/GBP": "FX:EURGBP", "EUR/JPY": "FX:EURJPY", "GBP/JPY": "FX:GBPJPY", "XAU/USD - GOLD": "OANDA:XAUUSD", "XAG/USD - SILVER": "OANDA:XAGUSD", "BTC/USD": "BINANCE:BTCUSDT", "ETH/USD": "BINANCE:ETHUSDT", "SOL/USD": "BINANCE:SOLUSDT", "XRP/USD": "BINANCE:XRPUSDT", "BNB/USD": "BINANCE:BNBUSDT", "DOGE/USD": "BINANCE:DOGEUSDT", "US30": "INDEX:US30", "NAS100": "INDEX:NAS100", "SPX500": "INDEX:SPX500", "GER40": "INDEX:GER40"}
 
 
 def wrap(html):
-    return f"<html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>body{{background:#0a0a0a;color:#fff;font-family:Arial;margin:0;padding:20px}}a{{color:#00ff88}}.card,.sigbox{{background:#151515;border-radius:10px;padding:18px;margin:15px auto;max-width:900px}}.row{{padding:14px;border-bottom:1px solid #292929;cursor:pointer}}.tp{{color:#00ff88}}.sl{{color:#ff4444}}table{{width:100%;border-collapse:collapse}}td,th{{padding:8px;border-bottom:1px solid #333;text-align:left}}</style></head><body>{html}</body></html>"
+    return f"<html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>body{{background:#0a0a0a;color:#fff;font-family:Arial;margin:0;padding:20px}}a{{color:#00ff88}}.card{{background:#111;padding:16px;border-radius:12px;margin:10px 0}}.row{{padding:12px;border:1px solid #2b2b2b;border-radius:10px;margin:8px 0;background:#141414;cursor:pointer}}.sigbox{{background:#111;padding:20px;border-radius:14px}}input,button{{width:100%;padding:12px;border-radius:10px;border:none;margin:8px 0}}input{{background:#1a1a1a;color:#fff}}button{{background:#00ff88;color:#0a0a0a;font-weight:bold}}table{{width:100%;border-collapse:collapse}}td{{padding:8px;border-bottom:1px solid #222}}h1,h2,h3{{margin:0 0 10px}}</style></head><body>{html}</body></html>"
 
 
 @app.route("/")
@@ -252,7 +187,7 @@ def market_page(symbol):
     history = signal_history(symbol, 20)
     rows = "".join(f"<tr><td>{item.status}</td><td>{item.close_price}</td><td>{item.closed_at}</td></tr>" for item in history)
     col = "#00ff88" if signal["type"] == "BUY" else "#ff4444"
-    return wrap(f"<a href='/'>‹ Back to Markets</a><div class='sigbox'><h2>{symbol} <span style='color:{col}'>{signal['type']}</span></h2><p>ACTIVE • Current market price: <b>{signal['entry']}</b></p><p>Entry: <b>{signal['entry']}</b> | TP1: <span class='tp'>{signal['tp']}</span> | TP2: <span class='tp'>{signal['tp2']}</span> | SL: <span class='sl'>{signal['sl']}</span></p><small>Signal opened: {signal['opened_at']}</small></div><div class='card'><h3>Signal history</h3><table><tr><th>Result</th><th>Close price</th><th>Closed at</th></tr>{rows or '<tr><td colspan=3>No completed signals yet.</td></tr>'}</table></div>")
+    return wrap(f"<a href='/'>‹ Back to Markets</a><div class='sigbox'><h2>{symbol} <span style='color:{col}'>{signal['type']}</span></h2><p>ACTIVE • Current market price: <b>{signal['entry']}</b> | TP: {signal['tp']} | SL: {signal['sl']}</p><p>Strategy: {signal['timeframe']}</p><table><thead><tr><th>Status</th><th>Close</th><th>Closed at</th></tr></thead><tbody>{rows}</tbody></table></div>")
 
 
 @app.route("/api/signal")
@@ -273,10 +208,11 @@ def api_signal_history():
 @app.route("/register", methods=["GET", "POST"])
 def reg():
     if request.method == "POST":
-        email, password = request.form["email"].lower().strip(), request.form["password"].strip()
+        email = request.form["email"].lower().strip()
+        password = request.form["password"].strip()
         if User.query.filter_by(email=email).first():
             return wrap("Email exists. <a href='/login'>Login</a>")
-        user = User(email=email, password=password)
+        user = User(email=email, password=hash_password(password))
         db.session.add(user)
         db.session.commit()
         session["user_id"] = user.id
@@ -287,8 +223,10 @@ def reg():
 @app.route("/login", methods=["GET", "POST"])
 def log():
     if request.method == "POST":
-        user = User.query.filter_by(email=request.form["email"].lower().strip()).first()
-        if user and user.password == request.form["password"].strip():
+        email = request.form["email"].lower().strip()
+        password = request.form["password"].strip()
+        user = User.query.filter_by(email=email).first()
+        if user and verify_password(password, user.password):
             session["user_id"] = user.id
             return redirect("/")
         return wrap("Wrong password. <a href='/login'>Try again</a>")
@@ -325,3 +263,102 @@ def webhook():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+
+""",
+"path":"app.py"},
+{"content":"""Persistent signal lifecycle for the Gazelle Signals Flask app."""
+from datetime import datetime, timezone
+
+
+db = None
+Signal = None
+
+
+def configure(database):
+    """Bind this module to the application's existing SQLAlchemy instance."""
+    global db, Signal
+    db = database
+
+    class _Signal(db.Model):
+        __tablename__ = "signals"
+        id = db.Column(db.Integer, primary_key=True)
+        symbol = db.Column(db.String(40), nullable=False, index=True)
+        direction = db.Column(db.String(4), nullable=False)
+        entry = db.Column(db.Float, nullable=False)
+        tp1 = db.Column(db.Float, nullable=False)
+        tp2 = db.Column(db.Float, nullable=False)
+        stop_loss = db.Column(db.Float, nullable=False)
+        status = db.Column(db.String(20), nullable=False, default="ACTIVE", index=True)
+        opened_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+        closed_at = db.Column(db.DateTime)
+        close_price = db.Column(db.Float)
+
+        __table_args__ = (db.UniqueConstraint("symbol", "status", name="uq_active_signal_symbol_status"),)
+
+    Signal = _Signal
+    return Signal
+
+
+def utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def active_signal(symbol):
+    return Signal.query.filter_by(symbol=symbol, status="ACTIVE").order_by(Signal.opened_at.desc()).first()
+
+
+def create_signal(symbol, values):
+    if not isinstance(values, dict):
+        return None
+    signal = Signal(symbol=symbol, direction=values["type"], entry=values["entry"], tp1=values["tp"], tp2=values["tp2"], stop_loss=values["sl"], status="ACTIVE")
+    db.session.add(signal)
+    db.session.commit()
+    return signal
+
+
+def outcome(signal, price):
+    if signal.direction == "BUY":
+        if price <= signal.stop_loss:
+            return "SL_HIT"
+        if price >= signal.tp2:
+            return "TP2_HIT"
+        if price >= signal.tp1:
+            return "TP1_HIT"
+    else:
+        if price >= signal.stop_loss:
+            return "SL_HIT"
+        if price <= signal.tp2:
+            return "TP2_HIT"
+        if price <= signal.tp1:
+            return "TP1_HIT"
+    return None
+
+
+def refresh_signal(symbol, price, generator):
+    if Signal is None:
+        raise RuntimeError("signal_lifecycle.configure(db) must be called first")
+    signal = active_signal(symbol)
+    result = outcome(signal, price) if signal else None
+    if result:
+        signal.status = result
+        signal.close_price = price
+        signal.closed_at = utcnow()
+        db.session.commit()
+        signal = None
+    if signal is None:
+        values = generator()
+        if not values:
+            return None
+        signal = create_signal(symbol, values)
+    return signal
+
+
+def signal_history(symbol=None, limit=100):
+    query = Signal.query.filter(Signal.status != "ACTIVE")
+    if symbol:
+        query = query.filter_by(symbol=symbol)
+    return query.order_by(Signal.closed_at.desc()).limit(limit).all()
+
+
+def as_dict(signal):
+    return {"id": signal.id, "pair": signal.symbol, "type": signal.direction, "entry": signal.entry, "tp": signal.tp1, "tp2": signal.tp2, "sl": signal.stop_loss, "status": signal.status, "opened_at": signal.opened_at.isoformat(), "closed_at": signal.closed_at.isoformat() if signal.closed_at else None, "close_price": signal.close_price}
