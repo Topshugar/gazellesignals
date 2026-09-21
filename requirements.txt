@@ -1,7 +1,6 @@
 Flask
 Flask-SQLAlchemy
-pandas
-pandas-ta
-requests
 psycopg2-binary
+requests
+pandas
 gunicorn
