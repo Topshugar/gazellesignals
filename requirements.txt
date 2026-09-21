@@ -1,7 +1,7 @@
 Flask
 Flask-SQLAlchemy
-yfinance
-ta
 pandas
-numpy
+pandas-ta
+requests
+psycopg2-binary
 gunicorn
